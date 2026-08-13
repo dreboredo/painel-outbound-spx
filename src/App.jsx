@@ -1,16 +1,15 @@
 import React, { useEffect, useState, useRef } from 'react';
+import mascoteImg from './assets/shopito.png'; // ajuste o caminho se necessário
 import { supabase } from './lib/supabase';
-import { RefreshCw, Filter, Truck, Clock, Package, Layers, RotateCcw, ChevronDown, Check, Home } from 'lucide-react';
+import { RefreshCw, Filter, Truck, Clock, Package, Layers, RotateCcw, ChevronDown, Check, Home, Search } from 'lucide-react';
 
 // =====================================================================
 // DESIGN TOKENS - PALETA SHOPEE & REGRAS
 // =====================================================================
 
-const RUA_CAPACIDADE_PADRAO = 12;
 const CPT_WINDOW_MINUTES = 120;
 const AGING_ALERT_MINUTES = 240;
 
-// Paleta Shopee Oficial
 const SHOPEE_PALETTE = {
   orange: '#EE4D2D',
   red: '#B50220',
@@ -26,9 +25,9 @@ const SHOPEE_PALETTE = {
 };
 
 const STATUS_SCALE = [
-  { max: 33, text: '#218E7E', bg: 'rgba(33, 142, 126, 0.15)', border: '#218E7E' },   // Cyan / Verde
-  { max: 66, text: '#E5A300', bg: 'rgba(229, 163, 0, 0.18)', border: '#E5A300' },   // Yellow / Amarelo
-  { max: Infinity, text: '#B50220', bg: 'rgba(181, 2, 32, 0.22)', border: '#B50220' } // Red / Vermelho
+  { max: 33, text: '#218E7E', bg: 'rgba(33, 142, 126, 0.15)', border: '#218E7E' },
+  { max: 66, text: '#E5A300', bg: 'rgba(229, 163, 0, 0.18)', border: '#E5A300' },
+  { max: Infinity, text: '#B50220', bg: 'rgba(181, 2, 32, 0.22)', border: '#B50220' }
 ];
 
 const NEUTRAL_THEME = { text: '#94A3B8', border: '#E2E8F0', bg: 'transparent' };
@@ -38,9 +37,22 @@ function getStatusTheme(pct) {
 }
 
 function parseAgingMinutes(agingStr) {
-  const match = /^(\d+)h\s*(\d+)min$/.exec(agingStr || '');
-  if (!match) return 0;
-  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+  if (!agingStr || agingStr.trim() === '-' || agingStr.trim() === '') return 0;
+  
+  const match = /(\d+)\s*h\s*(\d+)\s*m/i.exec(agingStr);
+  if (match) {
+    const horas = parseInt(match[1], 10) || 0;
+    const minutos = parseInt(match[2], 10) || 0;
+    return horas * 60 + minutos;
+  }
+
+  const apenasHoras = /(\d+)\s*h/i.exec(agingStr);
+  if (apenasHoras) return (parseInt(apenasHoras[1], 10) || 0) * 60;
+
+  const apenasMinutos = /(\d+)\s*m/i.exec(agingStr);
+  if (apenasMinutos) return parseInt(apenasMinutos[1], 10) || 0;
+
+  return 0;
 }
 
 function getAgingTheme(agingStr) {
@@ -49,8 +61,9 @@ function getAgingTheme(agingStr) {
   return getStatusTheme(pct);
 }
 
+// AJUSTE 2: Nova lógica de cores para o CPT das docas
 function getCptTheme(cptTimeString, horaAtual) {
-  if (!cptTimeString || cptTimeString === '-') return NEUTRAL_THEME;
+  if (!cptTimeString || cptTimeString === '-' || !cptTimeString.includes(':')) return NEUTRAL_THEME;
 
   const [h, m] = cptTimeString.split(':').map(Number);
   const cptDate = new Date(horaAtual);
@@ -58,14 +71,16 @@ function getCptTheme(cptTimeString, horaAtual) {
 
   const diffMinutes = (cptDate - horaAtual) / (1000 * 60);
 
-  if (diffMinutes >= CPT_WINDOW_MINUTES) return STATUS_SCALE[0];
-  if (diffMinutes <= 0) return STATUS_SCALE[STATUS_SCALE.length - 1];
+  // Cyan: Faltando mais de 75 minutos
+  if (diffMinutes >= 75) return STATUS_SCALE[0];
+  
+  // Yellow: Faltando entre 75 minutos e 30 minutos
+  if (diffMinutes > 30) return STATUS_SCALE[1];
 
-  const progressPct = ((CPT_WINDOW_MINUTES - diffMinutes) / CPT_WINDOW_MINUTES) * 100;
-  return getStatusTheme(progressPct);
+  // Red: Faltando 30 minutos ou menos / CPT vencido
+  return STATUS_SCALE[2];
 }
 
-// Funcao auxiliar para calcular o gradiente dinamico conforme a % ocupada (0-33%, 34-66%, 67-100%)
 function getDynamicGradient(pct, mirrored = false) {
   const green = 'rgba(33, 142, 126, 0.25)';
   const yellow = 'rgba(229, 163, 0, 0.25)';
@@ -85,53 +100,78 @@ function getDynamicGradient(pct, mirrored = false) {
 }
 
 // =====================================================================
-// MOCKS DE DADOS
+// PARSERS E TRATAMENTO DE STRING/DATA
 // =====================================================================
 
-const MOCK_RUAS = Array.from({ length: 58 }, (_, i) => {
-  const num = i + 1;
-  if (num === 57) return null;
+function parseNumeroRua(val) {
+  if (!val) return 0;
+  const str = String(val);
+  const match = str.match(/\d+/g);
+  if (match && match.length > 0) {
+    return parseInt(match[match.length - 1], 10);
+  }
+  return 0;
+}
 
-  const destinosExemplo = ['BETIM', 'SP_Santana', 'Louveira', 'Eunápolis_02', 'BA_Teixeira'];
-  const destino = destinosExemplo[(num - 1) % destinosExemplo.length];
+function parseCptToDate(cptTimestampStr) {
+  if (!cptTimestampStr || cptTimestampStr === '-') return null;
 
-  const cap = RUA_CAPACIDADE_PADRAO;
-  const totalOc = num === 2 ? 10 : num === 4 ? 6 : num === 1 ? 0 : (num % 5 === 0 ? 0 : (num * 3) % 13);
+  const partes = cptTimestampStr.split('|');
+  const targetStr = partes[partes.length - 1].trim();
 
-  const gaiolas = Math.floor(totalOc * 0.6);
-  const scuttles = totalOc - gaiolas;
-  const aging = num === 2 ? '19h 02min' : num === 4 ? '1h 30min' : num === 1 ? '0h 00min' : `${num % 12}h 15min`;
+  const match = targetStr.match(/(\d{2})-(\d{2})(\d{2}):(\d{2})/);
+  if (match) {
+    const [_, dia, mes, hora, minuto] = match;
+    const anoAtual = new Date().getFullYear();
+    return new Date(anoAtual, parseInt(mes, 10) - 1, parseInt(dia, 10), parseInt(hora, 10), parseInt(minuto, 10));
+  }
+
+  return null;
+}
+
+function extractLastTime(cptTimestampStr) {
+  const dateObj = parseCptToDate(cptTimestampStr);
+  if (dateObj && !isNaN(dateObj.getTime())) {
+    const h = String(dateObj.getHours()).padStart(2, '0');
+    const m = String(dateObj.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  }
+  return '-';
+}
+
+function limparNomeDestino(str) {
+  if (!str) return '';
+
+  const tratarUnico = (item) => {
+    let clean = String(item).trim();
+
+    clean = clean.replace(/\[?\d*\]?SoC[_\s]ES[_\s]Viana/gi, '').trim();
+    clean = clean.replace(/\[.*?\]/g, '').trim();
+    clean = clean.replace(/[_]+/g, ' ').trim();
+    clean = clean.replace(/\s+\d+\s*$/g, '').trim();
+
+    return clean;
+  };
+
+  const partes = String(str).split('|').map(tratarUnico).filter(Boolean);
+  return partes.join(', ');
+}
+
+function parseDestinosRua(val) {
+  if (!val) return { exibicao: 'Sem Destino', lista: [] };
+
+  const exibicaoLimpa = limparNomeDestino(val);
+  const lista = exibicaoLimpa.split(',').map(s => s.trim()).filter(Boolean);
+
+  if (lista.length === 0) {
+    return { exibicao: 'Sem Destino', lista: [] };
+  }
 
   return {
-    id_rua: `RUA OUT ${String(num).padStart(3, '0')}`,
-    numero_rua: num,
-    destino,
-    capacidade_total: cap,
-    total_ocupado: totalOc,
-    gaiolas,
-    scuttles,
-    aging_formatado: aging,
-    status: 'Available'
+    exibicao: exibicaoLimpa,
+    lista: lista
   };
-}).filter(Boolean);
-
-const MOCK_DOCAS = [
-  { id: 'EXT.OUT79', ativa: false },
-  { id: 'EXT.OUT80', ativa: true, veiculo: 'VILA VELHA', cpt: '12:00' },
-  { id: 'EXT.OUT81', ativa: true, veiculo: 'LOUVEIRA', cpt: '11:00' },
-  { id: 'EXT.OUT82', ativa: false },
-  { id: 'EXT.OUT83', ativa: true, veiculo: 'BETIM', cpt: '15:30' },
-  { id: 'EXT.OUT84', ativa: false }
-];
-
-const MOCK_CPTS = [
-  { destino: 'RJ', cpt: '14:00', pacotes: '1.240' },
-  { destino: 'BETIM', cpt: '15:00', pacotes: '850' },
-  { destino: 'BA', cpt: '16:00', pacotes: '2.100' },
-  { destino: 'LOUVEIRA', cpt: '17:30', pacotes: '620' },
-  { destino: 'EUNÁPOLIS', cpt: '19:00', pacotes: '410' },
-  { destino: 'SOC_RJ', cpt: '21:15', pacotes: '1.180' }
-];
+}
 
 // =====================================================================
 // COMPONENTE PRINCIPAL
@@ -139,10 +179,11 @@ const MOCK_CPTS = [
 
 export default function App() {
   const [ruas, setRuas] = useState([]);
+  const [cptsList, setCptsList] = useState([]);
+  const [docasList, setDocasList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [ultimaSinc, setUltimaSinc] = useState('');
   
-  // Filtros Multi-Seleção
   const [selectedDestinos, setSelectedDestinos] = useState([]);
   const [selectedRuas, setSelectedRuas] = useState([]);
   
@@ -150,36 +191,139 @@ export default function App() {
   const [ordenacao, setOrdenacao] = useState('numero');
 
   useEffect(() => {
-    fetchRuas();
-    const timer = setInterval(() => setHoraAtual(new Date()), 1000);
-    return () => clearInterval(timer);
+    fetchAllData();
+
+    // Relógio de 1 em 1 segundo
+    const clockTimer = setInterval(() => setHoraAtual(new Date()), 1000);
+
+    // Auto-refresh da página/dados de 10 em 10 minutos (600.000 ms)
+    const autoRefreshTimer = setInterval(() => {
+      fetchAllData();
+    }, 10 * 60 * 1000);
+
+    return () => {
+      clearInterval(clockTimer);
+      clearInterval(autoRefreshTimer);
+    };
   }, []);
 
-  async function fetchRuas() {
+  async function fetchAllData() {
     setLoading(true);
     const agora = new Date();
     setUltimaSinc(agora.toLocaleTimeString('pt-BR'));
 
+    await Promise.all([
+      fetchRuas(),
+      fetchTrips()
+    ]);
+
+    setLoading(false);
+  }
+
+  async function fetchRuas() {
     const { data, error } = await supabase
       .from('stage_out_ruas')
-      .select('*')
-      .order('numero_rua', { ascending: true });
+      .select('*');
 
     if (!error && data && data.length > 0) {
-      setRuas(data);
+      const ruasValidas = data.filter(r => {
+        const st = String(r.status || '').trim().toLowerCase();
+        return st !== 'unavailable';
+      });
+
+      const ruasFormatadas = ruasValidas.map(r => {
+        const numRua = parseNumeroRua(r.numero_rua);
+        const { exibicao, lista } = parseDestinosRua(r.destino);
+        const cap = Number(r.capacidade_total) || 0;
+        const gaiolas = Number(r.qtd_gaiolas) || 0;
+        const scuttles = Number(r.qtd_scuttles) || 0;
+        const totalOc = r.total_ocupado !== undefined && r.total_ocupado !== null 
+          ? Number(r.total_ocupado) 
+          : (gaiolas + scuttles);
+
+        return {
+          ...r,
+          numero_rua_num: numRua,
+          numero_rua_str: String(numRua).padStart(3, '0'),
+          destino_exibicao: exibicao,
+          destinos_lista: lista,
+          capacidade_total: cap,
+          qtd_gaiolas: gaiolas,
+          qtd_scuttles: scuttles,
+          total_ocupado: totalOc
+        };
+      });
+
+      setRuas(ruasFormatadas);
     } else {
-      setRuas(MOCK_RUAS);
+      setRuas([]);
     }
-    setLoading(false);
+  }
+
+  async function fetchTrips() {
+    const { data, error } = await supabase
+      .from('trips_cpt')
+      .select('*');
+
+    if (!error && data && data.length > 0) {
+      
+      const cptsMapeados = data
+        .filter(item => String(item.status || '').trim().toLowerCase() !== 'loading')
+        .map(item => {
+          const dateObj = parseCptToDate(item.cpt_timestamp);
+          const horaCpt = extractLastTime(item.cpt_timestamp);
+          const destinoLimpo = limparNomeDestino(item.station);
+          const pcts = item.pedidos_embalados ? Number(item.pedidos_embalados).toLocaleString('pt-BR') : '0';
+
+          return {
+            id: item.id,
+            destino: destinoLimpo || 'N/A',
+            cpt: horaCpt,
+            cptDate: dateObj,
+            pacotes: pcts,
+            status: item.status
+          };
+        })
+        .filter(item => item.cptDate !== null)
+        .sort((a, b) => a.cptDate - b.cptDate)
+        .slice(0, 6);
+
+      setCptsList(cptsMapeados);
+
+      const docasAlvo = ['OUT79', 'OUT80', 'OUT81', 'OUT82', 'OUT83', 'OUT84'];
+      
+      const docasMapeadas = docasAlvo.map(docaId => {
+        const tripDoca = data.find(t => String(t.doca_saida || '').toUpperCase().includes(docaId));
+        
+        if (tripDoca) {
+          return {
+            id: docaId,
+            ativa: true,
+            veiculo: limparNomeDestino(tripDoca.station) || tripDoca.tipo_veiculo || 'DOCADO',
+            cpt: extractLastTime(tripDoca.cpt_timestamp)
+          };
+        } else {
+          return {
+            id: docaId,
+            ativa: false,
+            veiculo: '-',
+            cpt: '-'
+          };
+        }
+      });
+
+      setDocasList(docasMapeadas);
+    }
   }
 
   const opcoesRuas = Array.from({ length: 58 }, (_, i) => i + 1)
     .filter(n => n !== 57)
     .map(n => String(n).padStart(3, '0'));
 
-  const destinosUnicos = Array.from(new Set(ruas.map(r => r.destino).filter(Boolean))).sort();
+  const destinosUnicos = Array.from(
+    new Set(ruas.flatMap(r => r.destinos_lista))
+  ).filter(Boolean).sort();
 
-  // Resetar Filtros
   const handleResetFilters = () => {
     setSelectedDestinos([]);
     setSelectedRuas([]);
@@ -187,26 +331,20 @@ export default function App() {
 
   const hasActiveFilters = selectedDestinos.length > 0 || selectedRuas.length > 0;
 
-  // Filtragem
   const ruasFiltradas = ruas.filter(r => {
-    const rNumStr = String(r.numero_rua).padStart(3, '0');
-    
-    const matchDestino = selectedDestinos.length === 0 || selectedDestinos.includes(r.destino);
-    const matchRua = selectedRuas.length === 0 || selectedRuas.includes(rNumStr);
-    
+    const matchDestino = selectedDestinos.length === 0 || 
+      r.destinos_lista.some(dest => selectedDestinos.includes(dest));
+    const matchRua = selectedRuas.length === 0 || selectedRuas.includes(r.numero_rua_str);
     return matchDestino && matchRua;
   });
 
-  // Métricas
-  const capacidadeTotal = ruasFiltradas.reduce((acc, r) => acc + (r.capacidade_total || 0), 0);
-  const totalGaiolas = ruasFiltradas.reduce((acc, r) => acc + (r.gaiolas || 0), 0);
-  const totalScuttles = ruasFiltradas.reduce((acc, r) => acc + (r.scuttles || 0), 0);
-  const totalOcupado = totalGaiolas + totalScuttles;
+  const capacidadeTotal = ruasFiltradas.reduce((acc, r) => acc + r.capacidade_total, 0);
+  const totalGaiolas = ruasFiltradas.reduce((acc, r) => acc + r.qtd_gaiolas, 0);
+  const totalScuttles = ruasFiltradas.reduce((acc, r) => acc + r.qtd_scuttles, 0);
+  const totalOcupado = ruasFiltradas.reduce((acc, r) => acc + r.total_ocupado, 0);
   const pctOcupadaNum = capacidadeTotal > 0 ? (totalOcupado / capacidadeTotal) * 100 : 0;
-  
-  const ruasLivresCount = ruasFiltradas.filter(r => (r.total_ocupado || 0) === 0).length;
+  const ruasLivresCount = ruasFiltradas.filter(r => (r.qtd_gaiolas + r.qtd_scuttles) === 0).length;
 
-  // Ordenação das ruas
   const sortRuas = (list) => {
     return [...list].sort((a, b) => {
       const pctA = a.capacidade_total > 0 ? (a.total_ocupado / a.capacidade_total) : 0;
@@ -216,20 +354,20 @@ export default function App() {
 
       if (ordenacao === 'aging') {
         if (agingB !== agingA) return agingB - agingA;
-        return a.numero_rua - b.numero_rua;
+        return a.numero_rua_num - b.numero_rua_num;
       }
 
       if (ordenacao === 'ocupacao') {
         if (pctB !== pctA) return pctB - pctA;
-        return a.numero_rua - b.numero_rua;
+        return a.numero_rua_num - b.numero_rua_num;
       }
 
-      return a.numero_rua - b.numero_rua;
+      return a.numero_rua_num - b.numero_rua_num;
     });
   };
 
-  const ruasPares = sortRuas(ruasFiltradas.filter(r => r.numero_rua % 2 === 0));
-  const ruasImpares = sortRuas(ruasFiltradas.filter(r => r.numero_rua % 2 !== 0));
+  const ruasPares = sortRuas(ruasFiltradas.filter(r => r.numero_rua_num % 2 === 0));
+  const ruasImpares = sortRuas(ruasFiltradas.filter(r => r.numero_rua_num % 2 !== 0));
 
   return (
     <div className="min-h-screen p-4 md:p-6 space-y-5 bg-white text-slate-800 font-sans">
@@ -238,14 +376,19 @@ export default function App() {
       <header className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
           
-          <h1 className="text-2xl font-black tracking-wider uppercase font-mono" style={{ color: SHOPEE_PALETTE.navy }}>
-            Overview Ruas <span className="text-slate-300">/</span> Stage Out
-          </h1>
+          <div className="flex items-center gap-3">
+            <img 
+              src={mascoteImg} 
+              alt="Mascote Shopee" 
+              className="h-12 w-auto object-contain" 
+            />
+            <h1 className="text-2xl font-black tracking-wider uppercase font-mono" style={{ color: SHOPEE_PALETTE.navy }}>
+              Overview Ruas <span className="text-slate-300">/</span> Stage Out
+            </h1>
+          </div>
 
-          {/* BARRA DE FILTROS E AÇÕES */}
           <div className="flex flex-wrap items-center gap-2.5">
             
-            {/* DROPDOWN DESTINOS */}
             <MultiSelectDropdown
               label="Destinos"
               options={destinosUnicos}
@@ -254,7 +397,6 @@ export default function App() {
               icon={Filter}
             />
 
-            {/* DROPDOWN RUAS */}
             <MultiSelectDropdown
               label="Ruas"
               options={opcoesRuas}
@@ -263,7 +405,6 @@ export default function App() {
               icon={Home}
             />
 
-            {/* BOTÃO REDEFINIR FILTROS (SEMPRE VISÍVEL) */}
             <button
               onClick={handleResetFilters}
               disabled={!hasActiveFilters}
@@ -272,15 +413,13 @@ export default function App() {
                   ? 'bg-slate-200 hover:bg-slate-300 text-slate-700 cursor-pointer shadow-sm'
                   : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
               }`}
-              title={hasActiveFilters ? "Limpar todos os filtros" : "Nenhum filtro ativo"}
             >
               <RotateCcw size={14} />
               Limpar
             </button>
 
-            {/* BOTÃO ATUALIZAR */}
             <button
-              onClick={fetchRuas}
+              onClick={fetchAllData}
               className="flex items-center gap-1.5 text-white font-bold px-4 rounded-lg text-xs transition cursor-pointer shadow h-[38px] hover:opacity-90"
               style={{ backgroundColor: SHOPEE_PALETTE.orange }}
             >
@@ -288,7 +427,6 @@ export default function App() {
               Atualizar
             </button>
 
-            {/* HORÁRIO ATUAL */}
             <div className="flex items-center gap-2 bg-white px-3.5 rounded-lg border border-slate-200 font-mono font-bold text-sm h-[38px] shadow-sm text-slate-700">
               <Clock size={15} className="animate-pulse" style={{ color: SHOPEE_PALETTE.orange }} />
               <span>{horaAtual.toLocaleTimeString('pt-BR')}</span>
@@ -309,36 +447,38 @@ export default function App() {
         <KpiCard label="Gaiolas" value={totalGaiolas} color="#8B5CF6" icon={Package} />
         <KpiCard label="Scuttles" value={totalScuttles} color="#0284C7" icon={Layers} />
         <KpiCard label="Total Ocupado" value={totalOcupado} color={SHOPEE_PALETTE.blue} />
-        <KpiCard label="% Ocupada" value={`${pctOcupadaNum.toFixed(1)}%`} color={getStatusTheme(pctOcupadaNum).text} />
+        <KpiCard label="% Ocupada" value={`${pctOcupadaNum.toFixed(2)}%`} color={getStatusTheme(pctOcupadaNum).text} />
         <KpiCard label="Ruas Livres" value={ruasLivresCount} color={SHOPEE_PALETTE.cyan} icon={Home} highlight />
       </div>
 
       {/* CPTS E DOCAS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
         
-        {/* PRÓXIMOS CPTS */}
         <section className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-sm">
           <div className="flex items-center gap-2 font-bold uppercase text-xs" style={{ color: SHOPEE_PALETTE.blue }}>
             <Clock size={16} />
             <span>Próximos CPTs</span>
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            {MOCK_CPTS.map((item, idx) => (
-              <CptCard key={idx} item={item} />
-            ))}
+            {cptsList.length > 0 ? (
+              cptsList.map((item) => <CptCard key={item.id} item={item} />)
+            ) : (
+              <div className="col-span-6 text-center text-slate-400 py-3">Sem CPTs disponíveis</div>
+            )}
           </div>
         </section>
 
-        {/* DOCAS / VEÍCULOS DOCADOS */}
         <section className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-sm">
           <div className="flex items-center gap-2 font-bold uppercase text-xs" style={{ color: SHOPEE_PALETTE.cyan }}>
             <Truck size={16} />
             <span>Docas / Veículos Docados</span>
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            {MOCK_DOCAS.map(doca => (
-              <DocaCard key={doca.id} doca={doca} horaAtual={horaAtual} />
-            ))}
+            {docasList.length > 0 ? (
+              docasList.map((doca) => <DocaCard key={doca.id} doca={doca} horaAtual={horaAtual} />)
+            ) : (
+              <div className="col-span-6 text-center text-slate-400 py-3">Sem Docas ativas</div>
+            )}
           </div>
         </section>
 
@@ -347,7 +487,6 @@ export default function App() {
       {/* GRID DAS RUAS */}
       <div className="pt-2 space-y-4">
         
-        {/* TÍTULO CENTRALIZADO */}
         <div className="flex items-center justify-center gap-4 w-full">
           <div className="h-[1px] bg-slate-200 flex-1" />
           <h2 className="text-sm font-black tracking-widest uppercase bg-slate-100 text-slate-800 px-5 py-1.5 rounded-full border border-slate-300 shadow-sm">
@@ -411,21 +550,25 @@ export default function App() {
           <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div className="hidden lg:block absolute inset-y-0 left-1/2 -translate-x-1/2 w-px border-l border-dashed border-slate-300" />
 
-            {/* PARES */}
+            {/* PARES (ESQUERDA) */}
             <div className="space-y-2.5">
               {ruasPares.length === 0 ? (
-                <div className="text-xs text-slate-400 italic px-1 py-4">Nenhuma rua par encontrada.</div>
+                <div className="text-xs text-slate-400 italic px-1 py-4 text-center border border-dashed border-slate-200 rounded-lg">
+                  Nenhuma rua par encontrada.
+                </div>
               ) : (
-                ruasPares.map(rua => <RuaCard key={rua.id_rua} rua={rua} />)
+                ruasPares.map((rua, idx) => <RuaCard key={rua.id || `par-${idx}`} rua={rua} />)
               )}
             </div>
 
-            {/* ÍMPARES */}
+            {/* ÍMPARES (DIREITA) */}
             <div className="space-y-2.5">
               {ruasImpares.length === 0 ? (
-                <div className="text-xs text-slate-400 italic px-1 py-4 text-right">Nenhuma rua ímpar encontrada.</div>
+                <div className="text-xs text-slate-400 italic px-1 py-4 text-center border border-dashed border-slate-200 rounded-lg">
+                  Nenhuma rua ímpar encontrada.
+                </div>
               ) : (
-                ruasImpares.map(rua => <RuaCard key={rua.id_rua} rua={rua} mirrored />)
+                ruasImpares.map((rua, idx) => <RuaCard key={rua.id || `impar-${idx}`} rua={rua} mirrored />)
               )}
             </div>
           </div>
@@ -437,11 +580,12 @@ export default function App() {
 }
 
 // =====================================================================
-// DROPDOWN CUSTOMIZADO COM CHECKBOXES (MULTI-SELECT)
+// COMPONENTES AUXILIARES
 // =====================================================================
 
 function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -453,6 +597,10 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const filteredOptions = options.filter(opt =>
+    String(opt).toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const toggleOption = (opt) => {
     if (selected.includes(opt)) {
@@ -486,10 +634,24 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-1 w-60 bg-white rounded-xl border border-slate-200 shadow-xl z-50 p-2 text-xs max-h-72 overflow-y-auto space-y-1">
+        <div className="absolute right-0 mt-1 w-64 bg-white rounded-xl border border-slate-200 shadow-xl z-50 p-2 text-xs max-h-80 flex flex-col space-y-1.5">
+          
+          {/* Input de Busca */}
+          <div className="relative px-1 pt-1 pb-0.5">
+            <Search size={13} className="absolute left-3 top-3 text-slate-400" />
+            <input
+              type="text"
+              placeholder={`Pesquisar ${label.toLowerCase()}...`}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-orange-500 focus:bg-white text-slate-700"
+            />
+          </div>
+
+          {/* Botão Selecionar Todos */}
           <div
             onClick={toggleSelectAll}
-            className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-100 cursor-pointer font-bold border-b border-slate-100 text-slate-800"
+            className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-100 cursor-pointer font-bold border-b border-slate-100 text-slate-800 shrink-0"
           >
             <div className={`w-4 h-4 rounded border flex items-center justify-center ${selected.length === options.length ? 'bg-orange-500 border-orange-500 text-white' : 'border-slate-300'}`}>
               {selected.length === options.length && <Check size={12} />}
@@ -497,30 +659,34 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
             <span>Selecionar Todos</span>
           </div>
 
-          {options.map(opt => {
-            const isChecked = selected.includes(opt);
-            return (
-              <div
-                key={opt}
-                onClick={() => toggleOption(opt)}
-                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer text-slate-700 font-medium"
-              >
-                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isChecked ? 'bg-orange-500 border-orange-500 text-white' : 'border-slate-300'}`}>
-                  {isChecked && <Check size={12} />}
-                </div>
-                <span className="truncate">{opt}</span>
-              </div>
-            );
-          })}
+          {/* Lista de Opções Filtradas */}
+          <div className="overflow-y-auto space-y-0.5 max-h-48 pr-1">
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map(opt => {
+                const isChecked = selected.includes(opt);
+                return (
+                  <div
+                    key={opt}
+                    onClick={() => toggleOption(opt)}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer text-slate-700 font-medium"
+                  >
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isChecked ? 'bg-orange-500 border-orange-500 text-white' : 'border-slate-300'}`}>
+                      {isChecked && <Check size={12} />}
+                    </div>
+                    <span className="truncate">{opt}</span>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="text-center text-slate-400 py-3 text-[11px]">Nenhum item encontrado</div>
+            )}
+          </div>
+
         </div>
       )}
     </div>
   );
 }
-
-// =====================================================================
-// COMPONENTES DE CARDS E KPIS
-// =====================================================================
 
 function KpiCard({ label, value, color, icon: Icon, highlight = false }) {
   return (
@@ -536,75 +702,85 @@ function KpiCard({ label, value, color, icon: Icon, highlight = false }) {
   );
 }
 
+// =====================================================================
+// COMPONENTE CPTCARD COM DESTAQUE AZUL PARA 'ARRIVED'
+// =====================================================================
 function CptCard({ item }) {
+  const isArrived = String(item.status || '').trim().toLowerCase() === 'arrived';
+
   return (
-    <div className="bg-white border border-slate-200 p-2 rounded-lg text-center flex flex-col justify-between gap-1 shadow-sm">
-      <span className="font-bold text-slate-800 text-xs tracking-wide truncate">{item.destino}</span>
-      <span className="font-mono font-black text-xs" style={{ color: SHOPEE_PALETTE.blue }}>{item.cpt}</span>
+    <div 
+      className={`border p-2 rounded-lg text-center flex flex-col justify-between gap-1 shadow-sm transition-all ${
+        isArrived 
+          ? 'bg-blue-50/80 border-[#1665C4]' 
+          : 'bg-white border-slate-200'
+      }`}
+    >
+      <span className="font-bold text-slate-800 text-xs tracking-wide truncate" title={item.destino}>{item.destino}</span>
+      <span 
+        className="font-mono font-black text-xs" 
+        style={{ color: isArrived ? SHOPEE_PALETTE.lightBlue : SHOPEE_PALETTE.blue }}
+      >
+        {item.cpt}
+      </span>
       <span className="text-[10px] font-medium text-slate-400">{item.pacotes} pcts</span>
     </div>
   );
 }
 
-// DOCA CARD: Doca ativa usa o tom vibrante Cyan (#218E7E) com borda acentuada de 2px e brilho
 function DocaCard({ doca, horaAtual }) {
   const cptTheme = doca.ativa ? getCptTheme(doca.cpt, horaAtual) : NEUTRAL_THEME;
 
   return (
     <div 
-      className={`p-2 rounded-lg text-center flex flex-col justify-between gap-1 transition-all ${
-        doca.ativa 
-          ? 'bg-teal-50/40 border-2 border-[#218E7E] shadow-sm' 
-          : 'bg-slate-100 border border-slate-200 text-slate-400'
-      }`}
+      className="p-2 rounded-lg text-center flex flex-col justify-between gap-1 transition-all shadow-sm border-2"
+      style={{
+        backgroundColor: doca.ativa ? cptTheme.bg : '#F1F2F3',
+        borderColor: doca.ativa ? cptTheme.border : '#E2E8F0',
+      }}
     >
       <div className="flex items-center justify-center gap-1.5 font-mono font-bold text-xs">
         <span 
-          className={`w-2 h-2 rounded-full ${
-            doca.ativa 
-              ? 'animate-pulse bg-[#218E7E] shadow-[0_0_8px_rgba(33,142,126,0.8)]' 
-              : 'bg-slate-300'
-          }`} 
+          className="w-2 h-2 rounded-full animate-pulse shadow-sm"
+          style={{
+            backgroundColor: doca.ativa ? cptTheme.text : '#CBD5E1',
+          }} 
         />
-        <span className={doca.ativa ? 'text-[#218E7E] font-black' : 'text-slate-500'}>
-          {doca.id.replace('EXT.', '')}
+        <span 
+          className="font-black"
+          style={{ color: doca.ativa ? cptTheme.text : '#64748B' }}
+        >
+          {doca.id}
         </span>
       </div>
 
-      <span className={`font-black text-xs truncate ${doca.ativa ? 'text-slate-800' : 'text-slate-400'}`}>
+      <span className={`font-bold text-xs tracking-wide truncate ${doca.ativa ? 'text-slate-800' : 'text-slate-400'}`} title={doca.veiculo}>
         {doca.ativa ? doca.veiculo : '-'}
       </span>
 
-      <span className="font-mono text-[11px] font-bold" style={{ color: doca.ativa ? cptTheme.text : undefined }}>
+      <span className="font-mono text-[11px] font-black" style={{ color: doca.ativa ? cptTheme.text : '#94A3B8' }}>
         {doca.ativa ? doca.cpt : '-'}
       </span>
     </div>
   );
 }
 
-// =====================================================================
-// CARD DE RUA COM GRADIENTE DINÂMICO POR PORCENTAGEM DE OCUPAÇÃO
-// =====================================================================
-
 function RuaCard({ rua, mirrored = false }) {
   const pct = rua.capacidade_total > 0 ? (rua.total_ocupado / rua.capacidade_total) * 100 : 0;
-  const numStr = String(rua.numero_rua).padStart(3, '0');
+  const numStr = rua.numero_rua_str;
   const theme = getStatusTheme(pct);
   const agingTheme = getAgingTheme(rua.aging_formatado);
 
   const numero = (
-    <div className="font-mono text-slate-500 font-black text-base w-8 text-center shrink-0">
+    <div className="font-mono text-slate-800 font-black text-xs md:text-sm w-12 text-center shrink-0 bg-slate-100 border border-slate-300 py-2.5 rounded-lg shadow-sm">
       {numStr}
     </div>
   );
 
   const dynamicBackground = getDynamicGradient(pct, mirrored);
-  const nomeDestino = rua.destino || 'DESTINO_PADRÃO';
 
   const barra = (
-    <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-3 relative overflow-hidden shadow-sm">
-      
-      {/* Barra de Preenchimento de Gradiente */}
+    <div className="flex-1 bg-white border border-slate-200 rounded-xl p-3 relative overflow-hidden shadow-sm">
       <div
         className={`absolute top-0 bottom-0 transition-all duration-500 ease-out z-0 ${
           mirrored ? 'border-l-2' : 'border-r-2'
@@ -618,34 +794,29 @@ function RuaCard({ rua, mirrored = false }) {
       />
 
       <div className={`relative z-10 flex items-center justify-between gap-3 w-full ${mirrored ? 'flex-row-reverse' : ''}`}>
-        
-        {/* Nome do Destino */}
-        <span className={`font-black tracking-wide text-sm truncate flex-1 text-slate-800 ${mirrored ? 'text-right' : 'text-left'}`}>
-          {nomeDestino}
+        <span className={`font-black tracking-wide text-xs md:text-sm truncate flex-1 text-slate-900 ${mirrored ? 'text-right' : 'text-left'}`}>
+          {rua.destino_exibicao}
         </span>
 
-        {/* Métricas */}
-        <div className={`flex items-center gap-4 shrink-0 font-mono text-xs ${mirrored ? 'flex-row-reverse' : ''}`}>
-          
+        <div className={`flex items-center gap-3.5 shrink-0 font-mono text-xs ${mirrored ? 'flex-row-reverse' : ''}`}>
           <span className="font-bold" style={{ color: agingTheme.text }}>
             {rua.aging_formatado || '0h 00min'}
           </span>
 
-          <span className="text-slate-600 font-bold min-w-[40px] text-center">
+          <span className="text-slate-700 font-bold min-w-[35px] text-center">
             {rua.total_ocupado}/{rua.capacidade_total}
           </span>
 
-          <span className="font-black text-sm min-w-[42px] text-right" style={{ color: theme.text }}>
+          <span className="font-black text-sm min-w-[40px] text-right" style={{ color: theme.text }}>
             {pct.toFixed(0)}%
           </span>
-
         </div>
       </div>
     </div>
   );
 
   return (
-    <div className="flex items-center gap-2.5">
+    <div className="flex items-center gap-2">
       {mirrored ? <>{barra}{numero}</> : <>{numero}{barra}</>}
     </div>
   );

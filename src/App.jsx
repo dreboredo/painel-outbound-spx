@@ -85,6 +85,7 @@ function getCptTheme(cptTimeString, horaAtual) {
   return STATUS_SCALE[2];
 }
 
+// O verde SEMPRE começa perto do número da rua (centro)
 function getDynamicGradient(pct, mirrored = false) {
   const green = 'rgba(33, 142, 126, 0.25)';
   const yellow = 'rgba(229, 163, 0, 0.25)';
@@ -94,12 +95,12 @@ function getDynamicGradient(pct, mirrored = false) {
     return green;
   } else if (pct <= 66) {
     return mirrored
-      ? `linear-gradient(270deg, ${green} 0%, ${yellow} 100%)`
-      : `linear-gradient(90deg, ${green} 0%, ${yellow} 100%)`;
+      ? `linear-gradient(90deg, ${green} 0%, ${yellow} 100%)`
+      : `linear-gradient(270deg, ${green} 0%, ${yellow} 100%)`;
   } else {
     return mirrored
-      ? `linear-gradient(270deg, ${green} 0%, ${yellow} 50%, ${red} 100%)`
-      : `linear-gradient(90deg, ${green} 0%, ${yellow} 50%, ${red} 100%)`;
+      ? `linear-gradient(90deg, ${green} 0%, ${yellow} 50%, ${red} 100%)`
+      : `linear-gradient(270deg, ${green} 0%, ${yellow} 50%, ${red} 100%)`;
   }
 }
 
@@ -212,14 +213,31 @@ export default function App() {
     };
   }, []);
 
+  async function fetchUltimaSync() {
+    const { data, error } = await supabase
+      .from('stage_out_ruas')
+      .select('updated_at')
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (!error && data && data.length > 0 && data[0].updated_at) {
+      const dataAtual = new Date(data[0].updated_at);
+
+      const h = String(dataAtual.getHours()).padStart(2, '0');
+      const m = String(dataAtual.getMinutes()).padStart(2, '0');
+      const s = String(dataAtual.getSeconds()).padStart(2, '0');
+
+      setUltimaSinc(`${h}:${m}:${s}`);
+    }
+  }
+
   async function fetchAllData() {
     setLoading(true);
-    const agora = new Date();
-    setUltimaSinc(agora.toLocaleTimeString('pt-BR'));
 
     await Promise.all([
       fetchRuas(),
-      fetchTrips()
+      fetchTrips(),
+      fetchUltimaSync()
     ]);
 
     setLoading(false);
@@ -346,7 +364,6 @@ export default function App() {
 
   const hasActiveFilters = selectedDestinos.length > 0 || selectedRuas.length > 0 || selectedUnitizadores.length > 0;
 
-  // Filtragem básica das ruas por DESTINO e RUA (usado para os CARDS)
   const ruasFiltradasPorDestinoERua = ruas.filter(r => {
     const matchDestino = selectedDestinos.length === 0 || 
       r.destinos_lista.some(dest => selectedDestinos.includes(dest));
@@ -354,7 +371,6 @@ export default function App() {
     return matchDestino && matchRua;
   });
 
-  // Cálculo dos CARDS: leva em conta APENAS Destino e Rua
   const capacidadeTotal = ruasFiltradasPorDestinoERua.reduce((acc, r) => acc + r.capacidade_total, 0);
   const totalGaiolas = ruasFiltradasPorDestinoERua.reduce((acc, r) => acc + r.qtd_gaiolas, 0);
   const totalScuttles = ruasFiltradasPorDestinoERua.reduce((acc, r) => acc + r.qtd_scuttles, 0);
@@ -362,7 +378,6 @@ export default function App() {
   const pctOcupadaNum = capacidadeTotal > 0 ? (totalOcupado / capacidadeTotal) * 100 : 0;
   const ruasLivresCount = ruasFiltradasPorDestinoERua.filter(r => r.total_ocupado === 0).length;
 
-  // Lógica exata para calcular o que é exibido em CADA RUA (Leva em conta o filtro de Unitizador)
   const calculaMetricasRua = (rua) => {
     const exibeGaiola = selectedUnitizadores.length === 0 || selectedUnitizadores.includes('Gaiola');
     const exibeScuttle = selectedUnitizadores.length === 0 || selectedUnitizadores.includes('Scuttle');
@@ -420,7 +435,6 @@ export default function App() {
             </h1>
           </div>
 
-          {/* CONTROLES / FILTROS NA MESMA LINHA */}
           <div className="flex flex-wrap items-center gap-2.5">
             
             <MultiSelectDropdown
@@ -472,7 +486,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* LINHA INFERIOR DO CABEÇALHO COM TIMER E ÚLTIMA SYNC */}
         <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-200">
           <p>Monitoramento Operacional em Tempo Real</p>
           
@@ -491,7 +504,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* CARDS KPIS (INALTERADOS PELO FILTRO DE UNITIZADOR) */}
+      {/* CARDS KPIS */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <KpiCard label="Capacidade Total" value={capacidadeTotal} color={SHOPEE_PALETTE.navy} />
         <KpiCard label="Gaiolas" value={totalGaiolas} color="#8B5CF6" icon={Package} />
@@ -545,7 +558,6 @@ export default function App() {
           <div className="h-[1px] bg-slate-200 flex-1" />
         </div>
 
-        {/* CABEÇALHO DA GRID E ORDENAÇÃO */}
         <div className="flex items-center justify-between px-2 text-xs">
           <div className="font-bold text-slate-500 uppercase tracking-wider">
             Pares
@@ -591,7 +603,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* LISTAGEM DAS RUAS */}
         {ruasFiltradasPorDestinoERua.length === 0 ? (
           <div className="text-center text-slate-500 text-sm py-12 border border-dashed border-slate-300 rounded-xl bg-slate-50">
             Nenhuma rua encontrada para os filtros selecionados.
@@ -846,22 +857,22 @@ function RuaCard({ rua, mirrored = false, calculaMetricasRua }) {
     <div className="flex-1 bg-white border border-slate-200 rounded-xl p-3 relative overflow-hidden shadow-sm">
       <div
         className={`absolute top-0 bottom-0 transition-all duration-500 ease-out z-0 ${
-          mirrored ? 'border-l-2' : 'border-r-2'
+          mirrored ? 'border-r-2' : 'border-l-2'
         }`}
         style={{
-          [mirrored ? 'right' : 'left']: 0,
+          [mirrored ? 'left' : 'right']: 0,
           width: `${Math.min(pct, 100)}%`,
           background: dynamicBackground,
           borderColor: theme.border,
         }}
       />
 
-      <div className={`relative z-10 flex items-center justify-between gap-3 w-full ${mirrored ? 'flex-row-reverse' : ''}`}>
-        <span className={`font-black tracking-wide text-xs md:text-sm truncate flex-1 text-slate-900 ${mirrored ? 'text-right' : 'text-left'}`}>
+      <div className={`relative z-10 flex items-center justify-between gap-3 w-full ${mirrored ? '' : 'flex-row-reverse'}`}>
+        <span className={`font-black tracking-wide text-xs md:text-sm truncate flex-1 text-slate-900 ${mirrored ? 'text-left' : 'text-right'}`}>
           {rua.destino_exibicao}
         </span>
 
-        <div className={`flex items-center gap-3.5 shrink-0 font-mono text-xs ${mirrored ? 'flex-row-reverse' : ''}`}>
+        <div className={`flex items-center gap-3.5 shrink-0 font-mono text-xs ${mirrored ? '' : 'flex-row-reverse'}`}>
           <span className="font-bold" style={{ color: agingTheme.text }}>
             {rua.aging_formatado || '0h 00min'}
           </span>
@@ -880,7 +891,7 @@ function RuaCard({ rua, mirrored = false, calculaMetricasRua }) {
 
   return (
     <div className="flex items-center gap-2">
-      {mirrored ? <>{barra}{numero}</> : <>{numero}{barra}</>}
+      {mirrored ? <>{numero}{barra}</> : <>{barra}{numero}</>}
     </div>
   );
 }

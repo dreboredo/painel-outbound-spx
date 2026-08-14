@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
+import * as htmlToImage from 'html-to-image';
 import mascoteImg from './assets/shopito.png'; // ajuste o caminho se necessário
 import { supabase } from './lib/supabase';
-import { RefreshCw, Filter, Truck, Clock, Package, Layers, RotateCcw, ChevronDown, Check, Home, Search, Box } from 'lucide-react';
+import { RefreshCw, Filter, Truck, Clock, Package, Layers, RotateCcw, ChevronDown, Check, Home, Search, Box, FileText, X, Camera } from 'lucide-react';
 
 // =====================================================================
 // DESIGN TOKENS - PALETA SHOPEE & REGRAS
@@ -40,22 +41,18 @@ function parseAgingMinutes(agingStr) {
   if (!agingStr || agingStr.trim() === '-' || agingStr.trim() === '') return 0;
   
   const str = agingStr.trim().toLowerCase();
-
   let totalMinutos = 0;
 
-  // Extrai Dias (ex: 1d, 2d)
   const matchDias = /(\d+)\s*d/i.exec(str);
   if (matchDias) {
     totalMinutos += (parseInt(matchDias[1], 10) || 0) * 24 * 60;
   }
 
-  // Extrai Horas (ex: 4h, 18h)
   const matchHoras = /(\d+)\s*h/i.exec(str);
   if (matchHoras) {
     totalMinutos += (parseInt(matchHoras[1], 10) || 0) * 60;
   }
 
-  // Extrai Minutos (ex: 30m, 30min)
   const matchMinutos = /(\d+)\s*m/i.exec(str);
   if (matchMinutos) {
     totalMinutos += parseInt(matchMinutos[1], 10) || 0;
@@ -85,7 +82,6 @@ function getCptTheme(cptTimeString, horaAtual) {
   return STATUS_SCALE[2];
 }
 
-// O verde SEMPRE começa perto do número da rua (centro)
 function getDynamicGradient(pct, mirrored = false) {
   const green = 'rgba(33, 142, 126, 0.25)';
   const yellow = 'rgba(229, 163, 0, 0.25)';
@@ -178,6 +174,16 @@ function parseDestinosRua(val) {
   };
 }
 
+function normalizarDestinoComposto(destinoStr) {
+  if (!destinoStr || destinoStr === 'Sem Destino') return 'Sem Destino';
+  return destinoStr
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b))
+    .join(', ');
+}
+
 // =====================================================================
 // COMPONENTE PRINCIPAL
 // =====================================================================
@@ -196,13 +202,14 @@ export default function App() {
   const [horaAtual, setHoraAtual] = useState(new Date());
   const [ordenacao, setOrdenacao] = useState('numero');
 
+  const [showReportModal, setShowReportModal] = useState(false);
+
   const opcoesUnitizadores = ['Gaiola', 'Scuttle'];
 
   useEffect(() => {
     fetchAllData();
 
     const clockTimer = setInterval(() => setHoraAtual(new Date()), 1000);
-
     const autoRefreshTimer = setInterval(() => {
       fetchAllData();
     }, 10 * 60 * 1000);
@@ -222,7 +229,6 @@ export default function App() {
 
     if (!error && data && data.length > 0 && data[0].updated_at) {
       const dataAtual = new Date(data[0].updated_at);
-
       const h = String(dataAtual.getHours()).padStart(2, '0');
       const m = String(dataAtual.getMinutes()).padStart(2, '0');
       const s = String(dataAtual.getSeconds()).padStart(2, '0');
@@ -289,7 +295,6 @@ export default function App() {
       .select('*');
 
     if (!error && data && data.length > 0) {
-      
       const cptsMapeados = data
         .filter(item => String(item.status || '').trim().toLowerCase() !== 'loading')
         .map(item => {
@@ -417,6 +422,27 @@ export default function App() {
   const ruasPares = sortRuas(ruasFiltradasPorDestinoERua.filter(r => r.numero_rua_num % 2 === 0));
   const ruasImpares = sortRuas(ruasFiltradasPorDestinoERua.filter(r => r.numero_rua_num % 2 !== 0));
 
+  const reportDestinos = React.useMemo(() => {
+    const mapa = {};
+
+    ruas.forEach(r => {
+      const destOriginal = r.destino_exibicao || 'Sem Destino';
+      const destNormalizado = normalizarDestinoComposto(destOriginal);
+
+      if (!mapa[destNormalizado]) {
+        mapa[destNormalizado] = { gaiolas: 0, scuttles: 0, total: 0 };
+      }
+      mapa[destNormalizado].gaiolas += r.qtd_gaiolas;
+      mapa[destNormalizado].scuttles += r.qtd_scuttles;
+      mapa[destNormalizado].total += r.total_ocupado;
+    });
+
+    return Object.entries(mapa)
+      .map(([destino, stats]) => ({ destino, ...stats }))
+      .filter(item => item.total > 0)
+      .sort((a, b) => b.total - a.total);
+  }, [ruas]);
+
   return (
     <div className="min-h-screen p-4 md:p-6 space-y-5 bg-white text-slate-800 font-sans">
       
@@ -490,6 +516,14 @@ export default function App() {
           <p>Monitoramento Operacional em Tempo Real</p>
           
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowReportModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs rounded-md shadow-sm transition-all cursor-pointer"
+            >
+              <FileText size={14} />
+              <span>Report Hora a Hora</span>
+            </button>
+
             <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-md border border-slate-200 font-mono font-bold text-xs shadow-sm text-slate-700">
               <Clock size={13} className="animate-pulse" style={{ color: SHOPEE_PALETTE.orange }} />
               <span>{horaAtual.toLocaleTimeString('pt-BR')}</span>
@@ -516,7 +550,6 @@ export default function App() {
 
       {/* CPTS E DOCAS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
-        
         <section className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-sm">
           <div className="flex items-center gap-2 font-bold uppercase text-xs" style={{ color: SHOPEE_PALETTE.blue }}>
             <Clock size={16} />
@@ -544,12 +577,10 @@ export default function App() {
             )}
           </div>
         </section>
-
       </div>
 
       {/* GRID DAS RUAS */}
       <div className="pt-2 space-y-4">
-        
         <div className="flex items-center justify-center gap-4 w-full">
           <div className="h-[1px] bg-slate-200 flex-1" />
           <h2 className="text-sm font-black tracking-widest uppercase bg-slate-100 text-slate-800 px-5 py-1.5 rounded-full border border-slate-300 shadow-sm">
@@ -611,7 +642,6 @@ export default function App() {
           <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div className="hidden lg:block absolute inset-y-0 left-1/2 -translate-x-1/2 w-px border-l border-dashed border-slate-300" />
 
-            {/* PARES (ESQUERDA) */}
             <div className="space-y-2.5">
               {ruasPares.length === 0 ? (
                 <div className="text-xs text-slate-400 italic px-1 py-4 text-center border border-dashed border-slate-200 rounded-lg">
@@ -624,7 +654,6 @@ export default function App() {
               )}
             </div>
 
-            {/* ÍMPARES (DIREITA) */}
             <div className="space-y-2.5">
               {ruasImpares.length === 0 ? (
                 <div className="text-xs text-slate-400 italic px-1 py-4 text-center border border-dashed border-slate-200 rounded-lg">
@@ -638,6 +667,187 @@ export default function App() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* MODAL REPORT HORA A HORA */}
+      {showReportModal && (
+        <ReportModal
+          onClose={() => setShowReportModal(false)}
+          capacidadeTotal={capacidadeTotal}
+          totalOcupado={totalOcupado}
+          pctOcupada={pctOcupadaNum}
+          reportDestinos={reportDestinos}
+        />
+      )}
+    </div>
+  );
+}
+
+// =====================================================================
+// MODAL DE REPORT (LAYOUT AJUSTADO: RESUMO MENOR E CABEÇALHO EM 1 LINHA)
+// =====================================================================
+
+function ReportModal({ onClose, capacidadeTotal, totalOcupado, pctOcupada, reportDestinos }) {
+  const pctLivre = (100 - pctOcupada).toFixed(2);
+  const [copied, setCopied] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  
+  const printAreaRef = useRef(null);
+
+  const handleCopyPrint = async () => {
+    if (!printAreaRef.current) return;
+    setCapturing(true);
+
+    try {
+      const blob = await htmlToImage.toBlob(printAreaRef.current, {
+        quality: 0.95,
+        backgroundColor: '#FFFFFF',
+        pixelRatio: 2,
+      });
+
+      if (!blob) {
+        alert("Não foi possível gerar a imagem.");
+        setCapturing(false);
+        return;
+      }
+
+      let sucesso = false;
+
+      if (navigator.clipboard && window.ClipboardItem) {
+        try {
+          const data = [new ClipboardItem({ 'image/png': blob })];
+          await navigator.clipboard.write(data);
+          sucesso = true;
+        } catch (err) {
+          console.warn('Bloqueio de clipboard, iniciando download...', err);
+        }
+      }
+
+      if (!sucesso) {
+        const link = document.createElement('a');
+        link.download = `Report_Stage_Out_${new Date().toISOString().slice(0, 10)}.png`;
+        link.href = URL.createObjectURL(blob);
+        link.click();
+      }
+
+      setCopied(true);
+      setCapturing(false);
+      setTimeout(() => setCopied(false), 3000);
+
+    } catch (error) {
+      console.error('Erro ao tirar o print:', error);
+      alert('Erro ao tirar print: ' + error.message);
+      setCapturing(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto">
+      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-8">
+        
+        {/* CABEÇALHO DO MODAL */}
+        <div className="bg-slate-50 border-b border-slate-200 p-3 flex items-center justify-between shrink-0">
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs transition cursor-pointer"
+          >
+            <X size={16} />
+            <span>Voltar ao Dashboard</span>
+          </button>
+
+          <h3 className="text-base md:text-lg font-black uppercase font-mono text-orange-600 tracking-wider">
+            OVERVIEW RUAS — STAGE OUT (REPORT)
+          </h3>
+
+          <button
+            onClick={handleCopyPrint}
+            disabled={capturing}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-bold text-xs shadow-sm transition cursor-pointer ${
+              copied
+                ? 'bg-emerald-600 text-white'
+                : 'bg-orange-500 hover:bg-orange-600 text-white'
+            }`}
+          >
+            {copied ? <Check size={16} /> : <Camera size={16} />}
+            <span>
+              {capturing
+                ? 'Gerando Print...'
+                : copied
+                ? 'Print Copiado!'
+                : 'Copiar Print'}
+            </span>
+          </button>
+        </div>
+
+        {/* ÁREA CAPTURADA PELO PRINT */}
+        <div ref={printAreaRef} className="p-4 bg-white">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
+            
+            {/* CARDS ESQUERDA (RESUMO GERAL MENOR - 1 COLUNA DE 4) */}
+            <div className="md:col-span-1 border border-slate-200 rounded-lg overflow-hidden bg-slate-50 shadow-sm text-xs font-mono font-bold">
+              <div className="bg-orange-500 text-white py-2 px-2 text-center font-black font-sans uppercase text-[11px] tracking-wider whitespace-nowrap">
+                RESUMO GERAL
+              </div>
+              <div className="divide-y divide-slate-200">
+                <div className="py-2 px-2 flex justify-between items-center text-[11px]">
+                  <span className="text-slate-500">CAPACIDADE</span>
+                  <span className="text-slate-900 font-black">{capacidadeTotal}</span>
+                </div>
+                <div className="py-2 px-2 flex justify-between items-center text-[11px]">
+                  <span className="text-slate-500">OCUPADO</span>
+                  <span className="text-slate-900 font-black">{totalOcupado}</span>
+                </div>
+                <div className="py-2 px-2 flex justify-between items-center bg-amber-50 text-[11px]">
+                  <span className="text-amber-800">% OCUPADA</span>
+                  <span className="text-amber-700 font-black">{pctOcupada.toFixed(2)}%</span>
+                </div>
+                <div className="py-2 px-2 flex justify-between items-center bg-emerald-50 text-[11px]">
+                  <span className="text-emerald-800">% LIVRE</span>
+                  <span className="text-emerald-700 font-black">{pctLivre}%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* TABELA DIREITA (AMPLIADA - 3 COLUNAS DE 4) */}
+            <div className="md:col-span-3 border border-slate-200 rounded-lg overflow-hidden bg-white text-xs shadow-sm">
+              <div className="bg-orange-500 text-white py-2 px-3 font-black font-sans uppercase text-[11px] tracking-wider flex justify-between items-center">
+                <span>DESTINO</span>
+                <div className="flex items-center gap-3 shrink-0 font-mono text-[11px]">
+                  <span className="w-14 text-center whitespace-nowrap">GAIOLAS</span>
+                  <span className="w-14 text-center whitespace-nowrap">SCUTTLES</span>
+                  <span className="w-24 text-center whitespace-nowrap">OCUPAÇÃO TOTAL</span>
+                </div>
+              </div>
+
+              <div>
+                {reportDestinos.length === 0 ? (
+                  <div className="text-center text-slate-400 py-6">
+                    Nenhum destino ocupado no momento.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {reportDestinos.map((item, idx) => (
+                      <div key={idx} className="flex justify-between items-center py-1.5 px-3 hover:bg-slate-50 transition">
+                        <span className="font-bold text-slate-800 pr-2 leading-snug">
+                          {item.destino}
+                        </span>
+                        
+                        <div className="flex items-center gap-3 font-mono text-center shrink-0">
+                          <span className="w-14 text-slate-600 font-semibold">{item.gaiolas}</span>
+                          <span className="w-14 text-slate-600 font-semibold">{item.scuttles}</span>
+                          <span className="w-24 font-black text-slate-900 bg-orange-50 border border-orange-200 rounded py-0.5 px-1 text-center">
+                            {item.total}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+        </div>
 
       </div>
     </div>
@@ -645,7 +855,7 @@ export default function App() {
 }
 
 // =====================================================================
-// COMPONENTES AUXILIARES
+// OUTROS COMPONENTES AUXILIARES
 // =====================================================================
 
 function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon }) {
@@ -700,7 +910,6 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
 
       {isOpen && (
         <div className="absolute right-0 mt-1 w-64 bg-white rounded-xl border border-slate-200 shadow-xl z-50 p-2 text-xs max-h-80 flex flex-col space-y-1.5">
-          
           {options.length > 5 && (
             <div className="relative px-1 pt-1 pb-0.5">
               <Search size={13} className="absolute left-3 top-3 text-slate-400" />
@@ -745,7 +954,6 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
               <div className="text-center text-slate-400 py-3 text-[11px]">Nenhum item encontrado</div>
             )}
           </div>
-
         </div>
       )}
     </div>

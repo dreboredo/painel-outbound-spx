@@ -39,20 +39,29 @@ function getStatusTheme(pct) {
 function parseAgingMinutes(agingStr) {
   if (!agingStr || agingStr.trim() === '-' || agingStr.trim() === '') return 0;
   
-  const match = /(\d+)\s*h\s*(\d+)\s*m/i.exec(agingStr);
-  if (match) {
-    const horas = parseInt(match[1], 10) || 0;
-    const minutos = parseInt(match[2], 10) || 0;
-    return horas * 60 + minutos;
+  const str = agingStr.trim().toLowerCase();
+
+  let totalMinutos = 0;
+
+  // Extrai Dias (ex: 1d, 2d)
+  const matchDias = /(\d+)\s*d/i.exec(str);
+  if (matchDias) {
+    totalMinutos += (parseInt(matchDias[1], 10) || 0) * 24 * 60;
   }
 
-  const apenasHoras = /(\d+)\s*h/i.exec(agingStr);
-  if (apenasHoras) return (parseInt(apenasHoras[1], 10) || 0) * 60;
+  // Extrai Horas (ex: 4h, 18h)
+  const matchHoras = /(\d+)\s*h/i.exec(str);
+  if (matchHoras) {
+    totalMinutos += (parseInt(matchHoras[1], 10) || 0) * 60;
+  }
 
-  const apenasMinutos = /(\d+)\s*m/i.exec(agingStr);
-  if (apenasMinutos) return parseInt(apenasMinutos[1], 10) || 0;
+  // Extrai Minutos (ex: 30m, 30min)
+  const matchMinutos = /(\d+)\s*m/i.exec(str);
+  if (matchMinutos) {
+    totalMinutos += parseInt(matchMinutos[1], 10) || 0;
+  }
 
-  return 0;
+  return totalMinutos;
 }
 
 function getAgingTheme(agingStr) {

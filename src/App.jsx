@@ -61,7 +61,6 @@ function getAgingTheme(agingStr) {
   return getStatusTheme(pct);
 }
 
-// AJUSTE 2: Nova lógica de cores para o CPT das docas
 function getCptTheme(cptTimeString, horaAtual) {
   if (!cptTimeString || cptTimeString === '-' || !cptTimeString.includes(':')) return NEUTRAL_THEME;
 
@@ -71,13 +70,9 @@ function getCptTheme(cptTimeString, horaAtual) {
 
   const diffMinutes = (cptDate - horaAtual) / (1000 * 60);
 
-  // Cyan: Faltando mais de 75 minutos
   if (diffMinutes >= 75) return STATUS_SCALE[0];
-  
-  // Yellow: Faltando entre 75 minutos e 30 minutos
   if (diffMinutes > 30) return STATUS_SCALE[1];
 
-  // Red: Faltando 30 minutos ou menos / CPT vencido
   return STATUS_SCALE[2];
 }
 
@@ -193,10 +188,8 @@ export default function App() {
   useEffect(() => {
     fetchAllData();
 
-    // Relógio de 1 em 1 segundo
     const clockTimer = setInterval(() => setHoraAtual(new Date()), 1000);
 
-    // Auto-refresh da página/dados de 10 em 10 minutos (600.000 ms)
     const autoRefreshTimer = setInterval(() => {
       fetchAllData();
     }, 10 * 60 * 1000);
@@ -274,6 +267,7 @@ export default function App() {
           const horaCpt = extractLastTime(item.cpt_timestamp);
           const destinoLimpo = limparNomeDestino(item.station);
           const pcts = item.pedidos_embalados ? Number(item.pedidos_embalados).toLocaleString('pt-BR') : '0';
+          const tipoVeic = item.tipo_veiculo ? String(item.tipo_veiculo).trim() : '-';
 
           return {
             id: item.id,
@@ -281,6 +275,7 @@ export default function App() {
             cpt: horaCpt,
             cptDate: dateObj,
             pacotes: pcts,
+            tipoVeiculo: tipoVeic,
             status: item.status
           };
         })
@@ -296,18 +291,25 @@ export default function App() {
         const tripDoca = data.find(t => String(t.doca_saida || '').toUpperCase().includes(docaId));
         
         if (tripDoca) {
+          const numCarregados = Number(tripDoca.pedidos_carregados) || 0;
+          const carregadosStr = numCarregados > 0 
+            ? `${numCarregados.toLocaleString('pt-BR')} pcts` 
+            : '-';
+
           return {
             id: docaId,
             ativa: true,
             veiculo: limparNomeDestino(tripDoca.station) || tripDoca.tipo_veiculo || 'DOCADO',
-            cpt: extractLastTime(tripDoca.cpt_timestamp)
+            cpt: extractLastTime(tripDoca.cpt_timestamp),
+            pedidosCarregados: carregadosStr
           };
         } else {
           return {
             id: docaId,
             ativa: false,
             veiculo: '-',
-            cpt: '-'
+            cpt: '-',
+            pedidosCarregados: '-'
           };
         }
       });
@@ -710,20 +712,27 @@ function CptCard({ item }) {
 
   return (
     <div 
-      className={`border p-2 rounded-lg text-center flex flex-col justify-between gap-1 shadow-sm transition-all ${
+      className={`border p-2 rounded-lg text-center flex flex-col items-center justify-center gap-1.5 shadow-sm transition-all min-h-[96px] ${
         isArrived 
           ? 'bg-blue-50/80 border-[#1665C4]' 
           : 'bg-white border-slate-200'
       }`}
     >
-      <span className="font-bold text-slate-800 text-xs tracking-wide truncate" title={item.destino}>{item.destino}</span>
+      <span className="font-bold text-slate-800 text-xs tracking-wide truncate w-full" title={item.destino}>
+        {item.destino}
+      </span>
       <span 
-        className="font-mono font-black text-xs" 
+        className="font-mono font-black text-xs leading-none" 
         style={{ color: isArrived ? SHOPEE_PALETTE.lightBlue : SHOPEE_PALETTE.blue }}
       >
         {item.cpt}
       </span>
-      <span className="text-[10px] font-medium text-slate-400">{item.pacotes} pcts</span>
+      <span className="text-[10px] font-semibold text-slate-600 truncate w-full" title={item.tipoVeiculo}>
+        {item.tipoVeiculo}
+      </span>
+      <span className="text-[10px] font-medium text-slate-400 truncate w-full">
+        {item.pacotes.includes('pcts') ? item.pacotes : `${item.pacotes} pcts`}
+      </span>
     </div>
   );
 }
@@ -733,7 +742,7 @@ function DocaCard({ doca, horaAtual }) {
 
   return (
     <div 
-      className="p-2 rounded-lg text-center flex flex-col justify-between gap-1 transition-all shadow-sm border-2"
+      className="p-2 rounded-lg text-center flex flex-col items-center justify-center gap-1.5 transition-all shadow-sm border-2 min-h-[96px]"
       style={{
         backgroundColor: doca.ativa ? cptTheme.bg : '#F1F2F3',
         borderColor: doca.ativa ? cptTheme.border : '#E2E8F0',
@@ -741,7 +750,7 @@ function DocaCard({ doca, horaAtual }) {
     >
       <div className="flex items-center justify-center gap-1.5 font-mono font-bold text-xs">
         <span 
-          className="w-2 h-2 rounded-full animate-pulse shadow-sm"
+          className="w-2 h-2 rounded-full animate-pulse shadow-sm shrink-0"
           style={{
             backgroundColor: doca.ativa ? cptTheme.text : '#CBD5E1',
           }} 
@@ -754,12 +763,19 @@ function DocaCard({ doca, horaAtual }) {
         </span>
       </div>
 
-      <span className={`font-bold text-xs tracking-wide truncate ${doca.ativa ? 'text-slate-800' : 'text-slate-400'}`} title={doca.veiculo}>
+      {/* Linha 2: Veículo/Destino */}
+      <span className={`font-bold text-xs tracking-wide truncate w-full ${doca.ativa ? 'text-slate-800' : 'text-slate-400'}`} title={doca.veiculo}>
         {doca.ativa ? doca.veiculo : '-'}
       </span>
 
-      <span className="font-mono text-[11px] font-black" style={{ color: doca.ativa ? cptTheme.text : '#94A3B8' }}>
+      {/* Linha 3: Hora CPT */}
+      <span className={`font-mono font-bold text-xs leading-none ${doca.ativa ? '' : 'text-slate-400'}`} style={{ color: doca.ativa ? cptTheme.text : undefined }}>
         {doca.ativa ? doca.cpt : '-'}
+      </span>
+
+      {/* Linha 4: Pedidos Carregados */}
+      <span className={`text-[10px] font-medium truncate w-full ${doca.ativa ? 'text-slate-600' : 'text-slate-400'}`}>
+        {doca.ativa ? doca.pedidosCarregados : '-'}
       </span>
     </div>
   );

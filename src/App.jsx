@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import mascoteImg from './assets/shopito.png'; // ajuste o caminho se necessário
 import { supabase } from './lib/supabase';
-import { RefreshCw, Filter, Truck, Clock, Package, Layers, RotateCcw, ChevronDown, Check, Home, Search } from 'lucide-react';
+import { RefreshCw, Filter, Truck, Clock, Package, Layers, RotateCcw, ChevronDown, Check, Home, Search, Box } from 'lucide-react';
 
 // =====================================================================
 // DESIGN TOKENS - PALETA SHOPEE & REGRAS
@@ -181,9 +181,12 @@ export default function App() {
   
   const [selectedDestinos, setSelectedDestinos] = useState([]);
   const [selectedRuas, setSelectedRuas] = useState([]);
+  const [selectedUnitizadores, setSelectedUnitizadores] = useState([]);
   
   const [horaAtual, setHoraAtual] = useState(new Date());
   const [ordenacao, setOrdenacao] = useState('numero');
+
+  const opcoesUnitizadores = ['Gaiola', 'Scuttle'];
 
   useEffect(() => {
     fetchAllData();
@@ -329,28 +332,47 @@ export default function App() {
   const handleResetFilters = () => {
     setSelectedDestinos([]);
     setSelectedRuas([]);
+    setSelectedUnitizadores([]);
   };
 
-  const hasActiveFilters = selectedDestinos.length > 0 || selectedRuas.length > 0;
+  const hasActiveFilters = selectedDestinos.length > 0 || selectedRuas.length > 0 || selectedUnitizadores.length > 0;
 
-  const ruasFiltradas = ruas.filter(r => {
+  // Filtragem básica das ruas por DESTINO e RUA (usado para os CARDS)
+  const ruasFiltradasPorDestinoERua = ruas.filter(r => {
     const matchDestino = selectedDestinos.length === 0 || 
       r.destinos_lista.some(dest => selectedDestinos.includes(dest));
     const matchRua = selectedRuas.length === 0 || selectedRuas.includes(r.numero_rua_str);
     return matchDestino && matchRua;
   });
 
-  const capacidadeTotal = ruasFiltradas.reduce((acc, r) => acc + r.capacidade_total, 0);
-  const totalGaiolas = ruasFiltradas.reduce((acc, r) => acc + r.qtd_gaiolas, 0);
-  const totalScuttles = ruasFiltradas.reduce((acc, r) => acc + r.qtd_scuttles, 0);
-  const totalOcupado = ruasFiltradas.reduce((acc, r) => acc + r.total_ocupado, 0);
+  // Cálculo dos CARDS: leva em conta APENAS Destino e Rua
+  const capacidadeTotal = ruasFiltradasPorDestinoERua.reduce((acc, r) => acc + r.capacidade_total, 0);
+  const totalGaiolas = ruasFiltradasPorDestinoERua.reduce((acc, r) => acc + r.qtd_gaiolas, 0);
+  const totalScuttles = ruasFiltradasPorDestinoERua.reduce((acc, r) => acc + r.qtd_scuttles, 0);
+  const totalOcupado = ruasFiltradasPorDestinoERua.reduce((acc, r) => acc + r.total_ocupado, 0);
   const pctOcupadaNum = capacidadeTotal > 0 ? (totalOcupado / capacidadeTotal) * 100 : 0;
-  const ruasLivresCount = ruasFiltradas.filter(r => (r.qtd_gaiolas + r.qtd_scuttles) === 0).length;
+  const ruasLivresCount = ruasFiltradasPorDestinoERua.filter(r => r.total_ocupado === 0).length;
+
+  // Lógica exata para calcular o que é exibido em CADA RUA (Leva em conta o filtro de Unitizador)
+  const calculaMetricasRua = (rua) => {
+    const exibeGaiola = selectedUnitizadores.length === 0 || selectedUnitizadores.includes('Gaiola');
+    const exibeScuttle = selectedUnitizadores.length === 0 || selectedUnitizadores.includes('Scuttle');
+
+    const cap = rua.capacidade_total;
+
+    let ocupado = 0;
+    if (exibeGaiola) ocupado += rua.qtd_gaiolas;
+    if (exibeScuttle) ocupado += rua.qtd_scuttles;
+
+    return { cap, ocupado };
+  };
 
   const sortRuas = (list) => {
     return [...list].sort((a, b) => {
-      const pctA = a.capacidade_total > 0 ? (a.total_ocupado / a.capacidade_total) : 0;
-      const pctB = b.capacidade_total > 0 ? (b.total_ocupado / b.capacidade_total) : 0;
+      const metricA = calculaMetricasRua(a);
+      const metricB = calculaMetricasRua(b);
+      const pctA = metricA.cap > 0 ? (metricA.ocupado / metricA.cap) : 0;
+      const pctB = metricB.cap > 0 ? (metricB.ocupado / metricB.cap) : 0;
       const agingA = parseAgingMinutes(a.aging_formatado);
       const agingB = parseAgingMinutes(b.aging_formatado);
 
@@ -368,8 +390,8 @@ export default function App() {
     });
   };
 
-  const ruasPares = sortRuas(ruasFiltradas.filter(r => r.numero_rua_num % 2 === 0));
-  const ruasImpares = sortRuas(ruasFiltradas.filter(r => r.numero_rua_num % 2 !== 0));
+  const ruasPares = sortRuas(ruasFiltradasPorDestinoERua.filter(r => r.numero_rua_num % 2 === 0));
+  const ruasImpares = sortRuas(ruasFiltradasPorDestinoERua.filter(r => r.numero_rua_num % 2 !== 0));
 
   return (
     <div className="min-h-screen p-4 md:p-6 space-y-5 bg-white text-slate-800 font-sans">
@@ -389,6 +411,7 @@ export default function App() {
             </h1>
           </div>
 
+          {/* CONTROLES / FILTROS NA MESMA LINHA */}
           <div className="flex flex-wrap items-center gap-2.5">
             
             <MultiSelectDropdown
@@ -405,6 +428,14 @@ export default function App() {
               selected={selectedRuas}
               setSelected={setSelectedRuas}
               icon={Home}
+            />
+
+            <MultiSelectDropdown
+              label="Unitizador"
+              options={opcoesUnitizadores}
+              selected={selectedUnitizadores}
+              setSelected={setSelectedUnitizadores}
+              icon={Box}
             />
 
             <button
@@ -429,21 +460,29 @@ export default function App() {
               Atualizar
             </button>
 
-            <div className="flex items-center gap-2 bg-white px-3.5 rounded-lg border border-slate-200 font-mono font-bold text-sm h-[38px] shadow-sm text-slate-700">
-              <Clock size={15} className="animate-pulse" style={{ color: SHOPEE_PALETTE.orange }} />
-              <span>{horaAtual.toLocaleTimeString('pt-BR')}</span>
-            </div>
-
           </div>
         </div>
 
+        {/* LINHA INFERIOR DO CABEÇALHO COM TIMER E ÚLTIMA SYNC */}
         <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-200">
           <p>Monitoramento Operacional em Tempo Real</p>
-          {ultimaSinc && <span className="font-mono text-[11px] bg-slate-200/60 px-2 py-0.5 rounded">Última sync: {ultimaSinc}</span>}
+          
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-md border border-slate-200 font-mono font-bold text-xs shadow-sm text-slate-700">
+              <Clock size={13} className="animate-pulse" style={{ color: SHOPEE_PALETTE.orange }} />
+              <span>{horaAtual.toLocaleTimeString('pt-BR')}</span>
+            </div>
+
+            {ultimaSinc && (
+              <span className="font-mono text-[11px] bg-slate-200/60 px-2 py-0.5 rounded">
+                Última sync: {ultimaSinc}
+              </span>
+            )}
+          </div>
         </div>
       </header>
 
-      {/* CARDS KPIS */}
+      {/* CARDS KPIS (INALTERADOS PELO FILTRO DE UNITIZADOR) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <KpiCard label="Capacidade Total" value={capacidadeTotal} color={SHOPEE_PALETTE.navy} />
         <KpiCard label="Gaiolas" value={totalGaiolas} color="#8B5CF6" icon={Package} />
@@ -544,7 +583,7 @@ export default function App() {
         </div>
 
         {/* LISTAGEM DAS RUAS */}
-        {ruasFiltradas.length === 0 ? (
+        {ruasFiltradasPorDestinoERua.length === 0 ? (
           <div className="text-center text-slate-500 text-sm py-12 border border-dashed border-slate-300 rounded-xl bg-slate-50">
             Nenhuma rua encontrada para os filtros selecionados.
           </div>
@@ -559,7 +598,9 @@ export default function App() {
                   Nenhuma rua par encontrada.
                 </div>
               ) : (
-                ruasPares.map((rua, idx) => <RuaCard key={rua.id || `par-${idx}`} rua={rua} />)
+                ruasPares.map((rua, idx) => (
+                  <RuaCard key={rua.id || `par-${idx}`} rua={rua} calculaMetricasRua={calculaMetricasRua} />
+                ))
               )}
             </div>
 
@@ -570,7 +611,9 @@ export default function App() {
                   Nenhuma rua ímpar encontrada.
                 </div>
               ) : (
-                ruasImpares.map((rua, idx) => <RuaCard key={rua.id || `impar-${idx}`} rua={rua} mirrored />)
+                ruasImpares.map((rua, idx) => (
+                  <RuaCard key={rua.id || `impar-${idx}`} rua={rua} mirrored calculaMetricasRua={calculaMetricasRua} />
+                ))
               )}
             </div>
           </div>
@@ -638,19 +681,19 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
       {isOpen && (
         <div className="absolute right-0 mt-1 w-64 bg-white rounded-xl border border-slate-200 shadow-xl z-50 p-2 text-xs max-h-80 flex flex-col space-y-1.5">
           
-          {/* Input de Busca */}
-          <div className="relative px-1 pt-1 pb-0.5">
-            <Search size={13} className="absolute left-3 top-3 text-slate-400" />
-            <input
-              type="text"
-              placeholder={`Pesquisar ${label.toLowerCase()}...`}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-orange-500 focus:bg-white text-slate-700"
-            />
-          </div>
+          {options.length > 5 && (
+            <div className="relative px-1 pt-1 pb-0.5">
+              <Search size={13} className="absolute left-3 top-3 text-slate-400" />
+              <input
+                type="text"
+                placeholder={`Pesquisar ${label.toLowerCase()}...`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-orange-500 focus:bg-white text-slate-700"
+              />
+            </div>
+          )}
 
-          {/* Botão Selecionar Todos */}
           <div
             onClick={toggleSelectAll}
             className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-100 cursor-pointer font-bold border-b border-slate-100 text-slate-800 shrink-0"
@@ -661,7 +704,6 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
             <span>Selecionar Todos</span>
           </div>
 
-          {/* Lista de Opções Filtradas */}
           <div className="overflow-y-auto space-y-0.5 max-h-48 pr-1">
             {filteredOptions.length > 0 ? (
               filteredOptions.map(opt => {
@@ -704,9 +746,6 @@ function KpiCard({ label, value, color, icon: Icon, highlight = false }) {
   );
 }
 
-// =====================================================================
-// COMPONENTE CPTCARD COM DESTAQUE AZUL PARA 'ARRIVED'
-// =====================================================================
 function CptCard({ item }) {
   const isArrived = String(item.status || '').trim().toLowerCase() === 'arrived';
 
@@ -763,17 +802,14 @@ function DocaCard({ doca, horaAtual }) {
         </span>
       </div>
 
-      {/* Linha 2: Veículo/Destino */}
       <span className={`font-bold text-xs tracking-wide truncate w-full ${doca.ativa ? 'text-slate-800' : 'text-slate-400'}`} title={doca.veiculo}>
         {doca.ativa ? doca.veiculo : '-'}
       </span>
 
-      {/* Linha 3: Hora CPT */}
       <span className={`font-mono font-bold text-xs leading-none ${doca.ativa ? '' : 'text-slate-400'}`} style={{ color: doca.ativa ? cptTheme.text : undefined }}>
         {doca.ativa ? doca.cpt : '-'}
       </span>
 
-      {/* Linha 4: Pedidos Carregados */}
       <span className={`text-[10px] font-medium truncate w-full ${doca.ativa ? 'text-slate-600' : 'text-slate-400'}`}>
         {doca.ativa ? doca.pedidosCarregados : '-'}
       </span>
@@ -781,8 +817,10 @@ function DocaCard({ doca, horaAtual }) {
   );
 }
 
-function RuaCard({ rua, mirrored = false }) {
-  const pct = rua.capacidade_total > 0 ? (rua.total_ocupado / rua.capacidade_total) * 100 : 0;
+function RuaCard({ rua, mirrored = false, calculaMetricasRua }) {
+  const { cap, ocupado } = calculaMetricasRua(rua);
+  const pct = cap > 0 ? (ocupado / cap) * 100 : 0;
+  
   const numStr = rua.numero_rua_str;
   const theme = getStatusTheme(pct);
   const agingTheme = getAgingTheme(rua.aging_formatado);
@@ -820,7 +858,7 @@ function RuaCard({ rua, mirrored = false }) {
           </span>
 
           <span className="text-slate-700 font-bold min-w-[35px] text-center">
-            {rua.total_ocupado}/{rua.capacidade_total}
+            {ocupado}/{cap}
           </span>
 
           <span className="font-black text-sm min-w-[40px] text-right" style={{ color: theme.text }}>

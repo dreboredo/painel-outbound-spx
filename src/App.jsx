@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import * as htmlToImage from 'html-to-image';
 import mascoteImg from './assets/shopito.png'; // ajuste o caminho se necessário
 import { supabase } from './lib/supabase';
-import { RefreshCw, Filter, Truck, Clock, Package, Layers, RotateCcw, ChevronDown, Check, Home, Search, Box, FileText, X, Camera } from 'lucide-react';
+import { RefreshCw, Filter, Truck, Clock, Package, Layers, RotateCcw, ChevronDown, Check, Home, Search, Box, FileText, X, Camera, Sun, Moon } from 'lucide-react';
 
 // =====================================================================
 // DESIGN TOKENS - PALETA SHOPEE & REGRAS
@@ -203,6 +203,20 @@ export default function App() {
   const [ordenacao, setOrdenacao] = useState('numero');
 
   const [showReportModal, setShowReportModal] = useState(false);
+
+  // ESTADO DO MODO ESCURO / MODO CLARO
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    return saved ? saved === 'dark' : false;
+  });
+
+  const toggleDarkMode = () => {
+    setDarkMode(prev => {
+      const next = !prev;
+      localStorage.setItem('theme', next ? 'dark' : 'light');
+      return next;
+    });
+  };
 
   const opcoesUnitizadores = ['Gaiola', 'Scuttle'];
 
@@ -444,10 +458,14 @@ export default function App() {
   }, [ruas]);
 
   return (
-    <div className="min-h-screen p-4 md:p-6 space-y-5 bg-white text-slate-800 font-sans">
+    <div className={`min-h-screen p-4 md:p-6 space-y-5 transition-colors duration-200 font-sans ${
+      darkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-slate-800'
+    }`}>
       
       {/* CABEÇALHO */}
-      <header className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+      <header className={`p-4 rounded-xl border shadow-sm space-y-3 ${
+        darkMode ? 'bg-slate-800/90 border-slate-700' : 'bg-slate-50 border-slate-200'
+      }`}>
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
           
           <div className="flex items-center gap-3">
@@ -456,8 +474,10 @@ export default function App() {
               alt="Mascote Shopee" 
               className="h-12 w-auto object-contain" 
             />
-            <h1 className="text-2xl font-black tracking-wider uppercase font-mono" style={{ color: SHOPEE_PALETTE.navy }}>
-              Overview Ruas <span className="text-slate-300">/</span> Stage Out
+            <h1 className={`text-2xl font-black tracking-wider uppercase font-mono ${
+              darkMode ? 'text-white' : ''
+            }`} style={{ color: darkMode ? undefined : SHOPEE_PALETTE.navy }}>
+              Overview Ruas <span className={darkMode ? 'text-slate-600' : 'text-slate-300'}>/</span> Stage Out
             </h1>
           </div>
 
@@ -469,6 +489,7 @@ export default function App() {
               selected={selectedDestinos}
               setSelected={setSelectedDestinos}
               icon={Filter}
+              darkMode={darkMode}
             />
 
             <MultiSelectDropdown
@@ -477,6 +498,7 @@ export default function App() {
               selected={selectedRuas}
               setSelected={setSelectedRuas}
               icon={Home}
+              darkMode={darkMode}
             />
 
             <MultiSelectDropdown
@@ -485,6 +507,7 @@ export default function App() {
               selected={selectedUnitizadores}
               setSelected={setSelectedUnitizadores}
               icon={Box}
+              darkMode={darkMode}
             />
 
             <button
@@ -492,8 +515,12 @@ export default function App() {
               disabled={!hasActiveFilters}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition h-[38px] ${
                 hasActiveFilters
-                  ? 'bg-slate-200 hover:bg-slate-300 text-slate-700 cursor-pointer shadow-sm'
-                  : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                  ? darkMode 
+                    ? 'bg-slate-700 hover:bg-slate-600 text-slate-200 cursor-pointer shadow-sm'
+                    : 'bg-slate-200 hover:bg-slate-300 text-slate-700 cursor-pointer shadow-sm'
+                  : darkMode
+                    ? 'bg-slate-800 text-slate-600 border border-slate-700 cursor-not-allowed'
+                    : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
               }`}
             >
               <RotateCcw size={14} />
@@ -512,10 +539,36 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-200">
+        <div className={`flex items-center justify-between text-xs pt-2 border-t ${
+          darkMode ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'
+        }`}>
           <p>Monitoramento Operacional em Tempo Real</p>
           
           <div className="flex items-center gap-3">
+
+            {/* BOTÃO MODO ESCURO / CLARO (AO LADO ESQUERDO DO REPORT HORA A HORA) */}
+            <button
+              onClick={toggleDarkMode}
+              title={darkMode ? "Alternar para Modo Claro" : "Alternar para Modo Escuro"}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer shadow-sm border ${
+                darkMode
+                  ? 'bg-slate-700 hover:bg-slate-600 text-yellow-400 border-slate-600'
+                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+              }`}
+            >
+              {darkMode ? (
+                <>
+                  <Sun size={14} className="text-yellow-400" />
+                  <span>Modo Claro</span>
+                </>
+              ) : (
+                <>
+                  <Moon size={14} className="text-slate-600" />
+                  <span>Modo Escuro</span>
+                </>
+              )}
+            </button>
+
             <button
               onClick={() => setShowReportModal(true)}
               className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs rounded-md shadow-sm transition-all cursor-pointer"
@@ -524,13 +577,17 @@ export default function App() {
               <span>Report Hora a Hora</span>
             </button>
 
-            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-md border border-slate-200 font-mono font-bold text-xs shadow-sm text-slate-700">
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border font-mono font-bold text-xs shadow-sm ${
+              darkMode ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-200 text-slate-700'
+            }`}>
               <Clock size={13} className="animate-pulse" style={{ color: SHOPEE_PALETTE.orange }} />
               <span>{horaAtual.toLocaleTimeString('pt-BR')}</span>
             </div>
 
             {ultimaSinc && (
-              <span className="font-mono text-[11px] bg-slate-200/60 px-2 py-0.5 rounded">
+              <span className={`font-mono text-[11px] px-2 py-0.5 rounded ${
+                darkMode ? 'bg-slate-700/80 text-slate-300' : 'bg-slate-200/60 text-slate-600'
+              }`}>
                 Última sync: {ultimaSinc}
               </span>
             )}
@@ -540,38 +597,42 @@ export default function App() {
 
       {/* CARDS KPIS */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KpiCard label="Capacidade Total" value={capacidadeTotal} color={SHOPEE_PALETTE.navy} />
-        <KpiCard label="Gaiolas" value={totalGaiolas} color="#8B5CF6" icon={Package} />
-        <KpiCard label="Scuttles" value={totalScuttles} color="#0284C7" icon={Layers} />
-        <KpiCard label="Total Ocupado" value={totalOcupado} color={SHOPEE_PALETTE.blue} />
-        <KpiCard label="% Ocupada" value={`${pctOcupadaNum.toFixed(2)}%`} color={getStatusTheme(pctOcupadaNum).text} />
-        <KpiCard label="Ruas Livres" value={ruasLivresCount} color={SHOPEE_PALETTE.cyan} icon={Home} highlight />
+        <KpiCard label="Capacidade Total" value={capacidadeTotal} color={darkMode ? '#60A5FA' : SHOPEE_PALETTE.navy} darkMode={darkMode} />
+        <KpiCard label="Gaiolas" value={totalGaiolas} color="#8B5CF6" icon={Package} darkMode={darkMode} />
+        <KpiCard label="Scuttles" value={totalScuttles} color="#0284C7" icon={Layers} darkMode={darkMode} />
+        <KpiCard label="Total Ocupado" value={totalOcupado} color={darkMode ? '#38BDF8' : SHOPEE_PALETTE.blue} darkMode={darkMode} />
+        <KpiCard label="% Ocupada" value={`${pctOcupadaNum.toFixed(2)}%`} color={getStatusTheme(pctOcupadaNum).text} darkMode={darkMode} />
+        <KpiCard label="Ruas Livres" value={ruasLivresCount} color={SHOPEE_PALETTE.cyan} icon={Home} highlight darkMode={darkMode} />
       </div>
 
       {/* CPTS E DOCAS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
-        <section className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-sm">
-          <div className="flex items-center gap-2 font-bold uppercase text-xs" style={{ color: SHOPEE_PALETTE.blue }}>
+        <section className={`p-4 rounded-xl border flex flex-col gap-3 shadow-sm ${
+          darkMode ? 'bg-slate-800/90 border-slate-700' : 'bg-slate-50 border-slate-200'
+        }`}>
+          <div className="flex items-center gap-2 font-bold uppercase text-xs" style={{ color: darkMode ? '#38BDF8' : SHOPEE_PALETTE.blue }}>
             <Clock size={16} />
             <span>Próximos CPTs</span>
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             {cptsList.length > 0 ? (
-              cptsList.map((item) => <CptCard key={item.id} item={item} />)
+              cptsList.map((item) => <CptCard key={item.id} item={item} darkMode={darkMode} />)
             ) : (
               <div className="col-span-6 text-center text-slate-400 py-3">Sem CPTs disponíveis</div>
             )}
           </div>
         </section>
 
-        <section className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col gap-3 shadow-sm">
+        <section className={`p-4 rounded-xl border flex flex-col gap-3 shadow-sm ${
+          darkMode ? 'bg-slate-800/90 border-slate-700' : 'bg-slate-50 border-slate-200'
+        }`}>
           <div className="flex items-center gap-2 font-bold uppercase text-xs" style={{ color: SHOPEE_PALETTE.cyan }}>
             <Truck size={16} />
             <span>Docas / Veículos Docados</span>
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             {docasList.length > 0 ? (
-              docasList.map((doca) => <DocaCard key={doca.id} doca={doca} horaAtual={horaAtual} />)
+              docasList.map((doca) => <DocaCard key={doca.id} doca={doca} horaAtual={horaAtual} darkMode={darkMode} />)
             ) : (
               <div className="col-span-6 text-center text-slate-400 py-3">Sem Docas ativas</div>
             )}
@@ -582,25 +643,29 @@ export default function App() {
       {/* GRID DAS RUAS */}
       <div className="pt-2 space-y-4">
         <div className="flex items-center justify-center gap-4 w-full">
-          <div className="h-[1px] bg-slate-200 flex-1" />
-          <h2 className="text-sm font-black tracking-widest uppercase bg-slate-100 text-slate-800 px-5 py-1.5 rounded-full border border-slate-300 shadow-sm">
+          <div className={`h-[1px] flex-1 ${darkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+          <h2 className={`text-sm font-black tracking-widest uppercase px-5 py-1.5 rounded-full border shadow-sm ${
+            darkMode ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-slate-100 text-slate-800 border-slate-300'
+          }`}>
             Stage Out — Ruas
           </h2>
-          <div className="h-[1px] bg-slate-200 flex-1" />
+          <div className={`h-[1px] flex-1 ${darkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
         </div>
 
         <div className="flex items-center justify-between px-2 text-xs">
-          <div className="font-bold text-slate-500 uppercase tracking-wider">
+          <div className={`font-bold uppercase tracking-wider ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             Pares
           </div>
 
-          <div className="flex items-center justify-center gap-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200">
+          <div className={`flex items-center justify-center gap-1.5 p-1 rounded-lg border ${
+            darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'
+          }`}>
             <button
               onClick={() => setOrdenacao('numero')}
               className={`px-3 py-1 rounded-md transition-all cursor-pointer text-xs ${
                 ordenacao === 'numero'
-                  ? 'bg-white text-slate-900 font-black shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? darkMode ? 'bg-slate-700 text-white font-black shadow-sm' : 'bg-white text-slate-900 font-black shadow-sm'
+                  : darkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Número
@@ -610,8 +675,8 @@ export default function App() {
               onClick={() => setOrdenacao('aging')}
               className={`px-3 py-1 rounded-md transition-all cursor-pointer text-xs ${
                 ordenacao === 'aging'
-                  ? 'bg-white text-slate-900 font-black shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? darkMode ? 'bg-slate-700 text-white font-black shadow-sm' : 'bg-white text-slate-900 font-black shadow-sm'
+                  : darkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Aging
@@ -621,47 +686,51 @@ export default function App() {
               onClick={() => setOrdenacao('ocupacao')}
               className={`px-3 py-1 rounded-md transition-all cursor-pointer text-xs ${
                 ordenacao === 'ocupacao'
-                  ? 'bg-white text-slate-900 font-black shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? darkMode ? 'bg-slate-700 text-white font-black shadow-sm' : 'bg-white text-slate-900 font-black shadow-sm'
+                  : darkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Ocupação
             </button>
           </div>
 
-          <div className="font-bold text-slate-500 uppercase tracking-wider">
+          <div className={`font-bold uppercase tracking-wider ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             Ímpares
           </div>
         </div>
 
         {ruasFiltradasPorDestinoERua.length === 0 ? (
-          <div className="text-center text-slate-500 text-sm py-12 border border-dashed border-slate-300 rounded-xl bg-slate-50">
+          <div className={`text-center text-sm py-12 border border-dashed rounded-xl ${
+            darkMode ? 'border-slate-700 bg-slate-800/50 text-slate-400' : 'border-slate-300 bg-slate-50 text-slate-500'
+          }`}>
             Nenhuma rua encontrada para os filtros selecionados.
           </div>
         ) : (
           <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="hidden lg:block absolute inset-y-0 left-1/2 -translate-x-1/2 w-px border-l border-dashed border-slate-300" />
+            <div className={`hidden lg:block absolute inset-y-0 left-1/2 -translate-x-1/2 w-px border-l border-dashed ${
+              darkMode ? 'border-slate-700' : 'border-slate-300'
+            }`} />
 
             <div className="space-y-2.5">
               {ruasPares.length === 0 ? (
-                <div className="text-xs text-slate-400 italic px-1 py-4 text-center border border-dashed border-slate-200 rounded-lg">
+                <div className="text-xs text-slate-400 italic px-1 py-4 text-center border border-dashed border-slate-200 dark:border-slate-700 rounded-lg">
                   Nenhuma rua par encontrada.
                 </div>
               ) : (
                 ruasPares.map((rua, idx) => (
-                  <RuaCard key={rua.id || `par-${idx}`} rua={rua} calculaMetricasRua={calculaMetricasRua} />
+                  <RuaCard key={rua.id || `par-${idx}`} rua={rua} calculaMetricasRua={calculaMetricasRua} darkMode={darkMode} />
                 ))
               )}
             </div>
 
             <div className="space-y-2.5">
               {ruasImpares.length === 0 ? (
-                <div className="text-xs text-slate-400 italic px-1 py-4 text-center border border-dashed border-slate-200 rounded-lg">
+                <div className="text-xs text-slate-400 italic px-1 py-4 text-center border border-dashed border-slate-200 dark:border-slate-700 rounded-lg">
                   Nenhuma rua ímpar encontrada.
                 </div>
               ) : (
                 ruasImpares.map((rua, idx) => (
-                  <RuaCard key={rua.id || `impar-${idx}`} rua={rua} mirrored calculaMetricasRua={calculaMetricasRua} />
+                  <RuaCard key={rua.id || `impar-${idx}`} rua={rua} mirrored calculaMetricasRua={calculaMetricasRua} darkMode={darkMode} />
                 ))
               )}
             </div>
@@ -684,7 +753,7 @@ export default function App() {
 }
 
 // =====================================================================
-// MODAL DE REPORT (LAYOUT AJUSTADO: RESUMO MENOR E CABEÇALHO EM 1 LINHA)
+// MODAL DE REPORT
 // =====================================================================
 
 function ReportModal({ onClose, capacidadeTotal, totalOcupado, pctOcupada, reportDestinos }) {
@@ -743,7 +812,7 @@ function ReportModal({ onClose, capacidadeTotal, totalOcupado, pctOcupada, repor
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto">
-      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-8">
+      <div className="bg-white text-slate-800 w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-8">
         
         {/* CABEÇALHO DO MODAL */}
         <div className="bg-slate-50 border-b border-slate-200 p-3 flex items-center justify-between shrink-0">
@@ -858,7 +927,7 @@ function ReportModal({ onClose, capacidadeTotal, totalOcupado, pctOcupada, repor
 // OUTROS COMPONENTES AUXILIARES
 // =====================================================================
 
-function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon }) {
+function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon, darkMode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef(null);
@@ -897,7 +966,11 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-slate-200 text-xs h-[38px] shadow-sm hover:border-slate-300 cursor-pointer text-slate-700 font-semibold"
+        className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs h-[38px] shadow-sm font-semibold cursor-pointer ${
+          darkMode
+            ? 'bg-slate-800 border-slate-700 hover:border-slate-600 text-slate-200'
+            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+        }`}
       >
         {Icon && <Icon size={14} style={{ color: SHOPEE_PALETTE.orange }} />}
         <span>
@@ -905,11 +978,13 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
             ? `Todos (${label})`
             : `${label}: ${selected.length} selecionado(s)`}
         </span>
-        <ChevronDown size={14} className="text-slate-400" />
+        <ChevronDown size={14} className={darkMode ? 'text-slate-500' : 'text-slate-400'} />
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-1 w-64 bg-white rounded-xl border border-slate-200 shadow-xl z-50 p-2 text-xs max-h-80 flex flex-col space-y-1.5">
+        <div className={`absolute right-0 mt-1 w-64 rounded-xl border shadow-xl z-50 p-2 text-xs max-h-80 flex flex-col space-y-1.5 ${
+          darkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-slate-200 text-slate-700'
+        }`}>
           {options.length > 5 && (
             <div className="relative px-1 pt-1 pb-0.5">
               <Search size={13} className="absolute left-3 top-3 text-slate-400" />
@@ -918,16 +993,28 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
                 placeholder={`Pesquisar ${label.toLowerCase()}...`}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-orange-500 focus:bg-white text-slate-700"
+                className={`w-full pl-7 pr-2 py-1.5 border rounded-lg text-xs outline-none ${
+                  darkMode 
+                    ? 'bg-slate-900 border-slate-700 focus:border-orange-500 text-slate-200' 
+                    : 'bg-slate-50 border-slate-200 focus:border-orange-500 focus:bg-white text-slate-700'
+                }`}
               />
             </div>
           )}
 
           <div
             onClick={toggleSelectAll}
-            className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-100 cursor-pointer font-bold border-b border-slate-100 text-slate-800 shrink-0"
+            className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer font-bold border-b shrink-0 ${
+              darkMode 
+                ? 'hover:bg-slate-700 border-slate-700 text-slate-200' 
+                : 'hover:bg-slate-100 border-slate-100 text-slate-800'
+            }`}
           >
-            <div className={`w-4 h-4 rounded border flex items-center justify-center ${selected.length === options.length ? 'bg-orange-500 border-orange-500 text-white' : 'border-slate-300'}`}>
+            <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+              selected.length === options.length 
+                ? 'bg-orange-500 border-orange-500 text-white' 
+                : darkMode ? 'border-slate-600' : 'border-slate-300'
+            }`}>
               {selected.length === options.length && <Check size={12} />}
             </div>
             <span>Selecionar Todos</span>
@@ -941,9 +1028,15 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
                   <div
                     key={opt}
                     onClick={() => toggleOption(opt)}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer text-slate-700 font-medium"
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer font-medium ${
+                      darkMode ? 'hover:bg-slate-700/60 text-slate-200' : 'hover:bg-slate-50 text-slate-700'
+                    }`}
                   >
-                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isChecked ? 'bg-orange-500 border-orange-500 text-white' : 'border-slate-300'}`}>
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                      isChecked 
+                        ? 'bg-orange-500 border-orange-500 text-white' 
+                        : darkMode ? 'border-slate-600' : 'border-slate-300'
+                    }`}>
                       {isChecked && <Check size={12} />}
                     </div>
                     <span className="truncate">{opt}</span>
@@ -960,41 +1053,45 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
   );
 }
 
-function KpiCard({ label, value, color, icon: Icon, highlight = false }) {
+function KpiCard({ label, value, color, icon: Icon, highlight = false, darkMode }) {
   return (
     <div className={`p-3.5 rounded-xl border flex flex-col justify-between shadow-sm transition-all ${
-      highlight ? 'bg-teal-50/50 border-teal-200' : 'bg-slate-50 border-slate-200'
+      highlight 
+        ? darkMode ? 'bg-teal-950/30 border-teal-800' : 'bg-teal-50/50 border-teal-200'
+        : darkMode ? 'bg-slate-800/90 border-slate-700' : 'bg-slate-50 border-slate-200'
     }`}>
       <div className="flex items-center gap-1.5">
         {Icon && <Icon size={14} style={{ color }} />}
-        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider truncate">{label}</span>
+        <span className={`text-[11px] font-bold uppercase tracking-wider truncate ${
+          darkMode ? 'text-slate-400' : 'text-slate-500'
+        }`}>{label}</span>
       </div>
       <span className="text-3xl font-black font-mono mt-1" style={{ color }}>{value}</span>
     </div>
   );
 }
 
-function CptCard({ item }) {
+function CptCard({ item, darkMode }) {
   const isArrived = String(item.status || '').trim().toLowerCase() === 'arrived';
 
   return (
     <div 
       className={`border p-2 rounded-lg text-center flex flex-col items-center justify-center gap-1.5 shadow-sm transition-all min-h-[96px] ${
         isArrived 
-          ? 'bg-blue-50/80 border-[#1665C4]' 
-          : 'bg-white border-slate-200'
+          ? darkMode ? 'bg-blue-950/40 border-blue-600' : 'bg-blue-50/80 border-[#1665C4]' 
+          : darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
       }`}
     >
-      <span className="font-bold text-slate-800 text-xs tracking-wide truncate w-full" title={item.destino}>
+      <span className={`font-bold text-xs tracking-wide truncate w-full ${darkMode ? 'text-slate-200' : 'text-slate-800'}`} title={item.destino}>
         {item.destino}
       </span>
       <span 
         className="font-mono font-black text-xs leading-none" 
-        style={{ color: isArrived ? SHOPEE_PALETTE.lightBlue : SHOPEE_PALETTE.blue }}
+        style={{ color: isArrived ? (darkMode ? '#60A5FA' : SHOPEE_PALETTE.lightBlue) : (darkMode ? '#38BDF8' : SHOPEE_PALETTE.blue) }}
       >
         {item.cpt}
       </span>
-      <span className="text-[10px] font-semibold text-slate-600 truncate w-full" title={item.tipoVeiculo}>
+      <span className={`text-[10px] font-semibold truncate w-full ${darkMode ? 'text-slate-300' : 'text-slate-600'}`} title={item.tipoVeiculo}>
         {item.tipoVeiculo}
       </span>
       <span className="text-[10px] font-medium text-slate-400 truncate w-full">
@@ -1004,15 +1101,15 @@ function CptCard({ item }) {
   );
 }
 
-function DocaCard({ doca, horaAtual }) {
+function DocaCard({ doca, horaAtual, darkMode }) {
   const cptTheme = doca.ativa ? getCptTheme(doca.cpt, horaAtual) : NEUTRAL_THEME;
 
   return (
     <div 
       className="p-2 rounded-lg text-center flex flex-col items-center justify-center gap-1.5 transition-all shadow-sm border-2 min-h-[96px]"
       style={{
-        backgroundColor: doca.ativa ? cptTheme.bg : '#F1F2F3',
-        borderColor: doca.ativa ? cptTheme.border : '#E2E8F0',
+        backgroundColor: doca.ativa ? cptTheme.bg : (darkMode ? '#1E293B' : '#F1F2F3'),
+        borderColor: doca.ativa ? cptTheme.border : (darkMode ? '#334155' : '#E2E8F0'),
       }}
     >
       <div className="flex items-center justify-center gap-1.5 font-mono font-bold text-xs">
@@ -1024,13 +1121,17 @@ function DocaCard({ doca, horaAtual }) {
         />
         <span 
           className="font-black"
-          style={{ color: doca.ativa ? cptTheme.text : '#64748B' }}
+          style={{ color: doca.ativa ? cptTheme.text : (darkMode ? '#94A3B8' : '#64748B') }}
         >
           {doca.id}
         </span>
       </div>
 
-      <span className={`font-bold text-xs tracking-wide truncate w-full ${doca.ativa ? 'text-slate-800' : 'text-slate-400'}`} title={doca.veiculo}>
+      <span className={`font-bold text-xs tracking-wide truncate w-full ${
+        doca.ativa 
+          ? (darkMode ? 'text-slate-100' : 'text-slate-800') 
+          : 'text-slate-400'
+      }`} title={doca.veiculo}>
         {doca.ativa ? doca.veiculo : '-'}
       </span>
 
@@ -1038,14 +1139,18 @@ function DocaCard({ doca, horaAtual }) {
         {doca.ativa ? doca.cpt : '-'}
       </span>
 
-      <span className={`text-[10px] font-medium truncate w-full ${doca.ativa ? 'text-slate-600' : 'text-slate-400'}`}>
+      <span className={`text-[10px] font-medium truncate w-full ${
+        doca.ativa 
+          ? (darkMode ? 'text-slate-300' : 'text-slate-600') 
+          : 'text-slate-400'
+      }`}>
         {doca.ativa ? doca.pedidosCarregados : '-'}
       </span>
     </div>
   );
 }
 
-function RuaCard({ rua, mirrored = false, calculaMetricasRua }) {
+function RuaCard({ rua, mirrored = false, calculaMetricasRua, darkMode }) {
   const { cap, ocupado } = calculaMetricasRua(rua);
   const pct = cap > 0 ? (ocupado / cap) * 100 : 0;
   
@@ -1054,7 +1159,11 @@ function RuaCard({ rua, mirrored = false, calculaMetricasRua }) {
   const agingTheme = getAgingTheme(rua.aging_formatado);
 
   const numero = (
-    <div className="font-mono text-slate-800 font-black text-xs md:text-sm w-12 text-center shrink-0 bg-slate-100 border border-slate-300 py-2.5 rounded-lg shadow-sm">
+    <div className={`font-mono font-black text-xs md:text-sm w-12 text-center shrink-0 py-2.5 rounded-lg border shadow-sm ${
+      darkMode 
+        ? 'bg-slate-800 text-slate-100 border-slate-700' 
+        : 'bg-slate-100 text-slate-800 border-slate-300'
+    }`}>
       {numStr}
     </div>
   );
@@ -1062,7 +1171,9 @@ function RuaCard({ rua, mirrored = false, calculaMetricasRua }) {
   const dynamicBackground = getDynamicGradient(pct, mirrored);
 
   const barra = (
-    <div className="flex-1 bg-white border border-slate-200 rounded-xl p-3 relative overflow-hidden shadow-sm">
+    <div className={`flex-1 border rounded-xl p-3 relative overflow-hidden shadow-sm ${
+      darkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-white border-slate-200'
+    }`}>
       <div
         className={`absolute top-0 bottom-0 transition-all duration-500 ease-out z-0 ${
           mirrored ? 'border-r-2' : 'border-l-2'
@@ -1076,7 +1187,9 @@ function RuaCard({ rua, mirrored = false, calculaMetricasRua }) {
       />
 
       <div className={`relative z-10 flex items-center justify-between gap-3 w-full ${mirrored ? '' : 'flex-row-reverse'}`}>
-        <span className={`font-black tracking-wide text-xs md:text-sm truncate flex-1 text-slate-900 ${mirrored ? 'text-left' : 'text-right'}`}>
+        <span className={`font-black tracking-wide text-xs md:text-sm truncate flex-1 ${
+          darkMode ? 'text-slate-100' : 'text-slate-900'
+        } ${mirrored ? 'text-left' : 'text-right'}`}>
           {rua.destino_exibicao}
         </span>
 
@@ -1085,7 +1198,9 @@ function RuaCard({ rua, mirrored = false, calculaMetricasRua }) {
             {rua.aging_formatado || '0h 00min'}
           </span>
 
-          <span className="text-slate-700 font-bold min-w-[35px] text-center">
+          <span className={`font-bold min-w-[35px] text-center ${
+            darkMode ? 'text-slate-200' : 'text-slate-700'
+          }`}>
             {ocupado}/{cap}
           </span>
 

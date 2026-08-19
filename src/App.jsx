@@ -149,6 +149,9 @@ function limparNomeDestino(str) {
     clean = clean.replace(/\[?\d*\]?SoC[_\s]ES[_\s]Viana/gi, '').trim();
     clean = clean.replace(/\[.*?\]/g, '').trim();
     clean = clean.replace(/[_]+/g, ' ').trim();
+
+    clean = clean.replace(/(Gravataí)\s*\d+/gi, '$1').trim();
+
     clean = clean.replace(/\s+\d+\s*$/g, '').trim();
 
     return clean;
@@ -466,6 +469,7 @@ export default function App() {
       <header className={`p-4 rounded-xl border shadow-sm space-y-3 ${
         darkMode ? 'bg-slate-800/90 border-slate-700' : 'bg-slate-50 border-slate-200'
       }`}>
+        {/* LINHA 1: TÍTULO E FILTROS */}
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
           
           <div className="flex items-center gap-3">
@@ -490,6 +494,7 @@ export default function App() {
               setSelected={setSelectedDestinos}
               icon={Filter}
               darkMode={darkMode}
+              hasTypeFilter={true}
             />
 
             <MultiSelectDropdown
@@ -513,7 +518,7 @@ export default function App() {
             <button
               onClick={handleResetFilters}
               disabled={!hasActiveFilters}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition h-[38px] ${
+              className={`flex items-center gap-1.5 px-3 rounded-lg text-xs font-bold transition h-[38px] ${
                 hasActiveFilters
                   ? darkMode 
                     ? 'bg-slate-700 hover:bg-slate-600 text-slate-200 cursor-pointer shadow-sm'
@@ -539,18 +544,19 @@ export default function App() {
           </div>
         </div>
 
-        <div className={`flex items-center justify-between text-xs pt-2 border-t ${
+        {/* LINHA 2: SUBTÍTULO, MODO CLARO/ESCURO, REPORT, RELÓGIO E SYNC (CENTRALIZADOS NA VERTICAL) */}
+        <div className={`flex flex-col sm:flex-row items-center justify-between gap-3 text-xs pt-3 border-t ${
           darkMode ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'
         }`}>
-          <p>Monitoramento Operacional em Tempo Real</p>
+          <p className="font-medium">Monitoramento Operacional em Tempo Real</p>
           
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
 
-            {/* BOTÃO MODO ESCURO / CLARO (AO LADO ESQUERDO DO REPORT HORA A HORA) */}
+            {/* BOTÃO MODO ESCURO / CLARO */}
             <button
               onClick={toggleDarkMode}
               title={darkMode ? "Alternar para Modo Claro" : "Alternar para Modo Escuro"}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer shadow-sm border ${
+              className={`flex items-center gap-1.5 px-3 h-[32px] rounded-md text-xs font-bold transition-all cursor-pointer shadow-sm border ${
                 darkMode
                   ? 'bg-slate-700 hover:bg-slate-600 text-yellow-400 border-slate-600'
                   : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
@@ -569,27 +575,30 @@ export default function App() {
               )}
             </button>
 
+            {/* BOTÃO REPORT */}
             <button
               onClick={() => setShowReportModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs rounded-md shadow-sm transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-3 h-[32px] bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs rounded-md shadow-sm transition-all cursor-pointer"
             >
               <FileText size={14} />
               <span>Report Hora a Hora</span>
             </button>
 
-            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border font-mono font-bold text-xs shadow-sm ${
+            {/* RELÓGIO */}
+            <div className={`flex items-center gap-1.5 px-2.5 h-[32px] rounded-md border font-mono font-bold text-xs shadow-sm ${
               darkMode ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-200 text-slate-700'
             }`}>
               <Clock size={13} className="animate-pulse" style={{ color: SHOPEE_PALETTE.orange }} />
               <span>{horaAtual.toLocaleTimeString('pt-BR')}</span>
             </div>
 
+            {/* ÚLTIMA SYNC */}
             {ultimaSinc && (
-              <span className={`font-mono text-[11px] px-2 py-0.5 rounded ${
+              <div className={`flex items-center font-mono text-[11px] px-2.5 h-[32px] rounded-md font-semibold ${
                 darkMode ? 'bg-slate-700/80 text-slate-300' : 'bg-slate-200/60 text-slate-600'
               }`}>
                 Última sync: {ultimaSinc}
-              </span>
+              </div>
             )}
           </div>
         </div>
@@ -852,7 +861,7 @@ function ReportModal({ onClose, capacidadeTotal, totalOcupado, pctOcupada, repor
         <div ref={printAreaRef} className="p-4 bg-white">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
             
-            {/* CARDS ESQUERDA (RESUMO GERAL MENOR - 1 COLUNA DE 4) */}
+            {/* CARDS ESQUERDA */}
             <div className="md:col-span-1 border border-slate-200 rounded-lg overflow-hidden bg-slate-50 shadow-sm text-xs font-mono font-bold">
               <div className="bg-orange-500 text-white py-2 px-2 text-center font-black font-sans uppercase text-[11px] tracking-wider whitespace-nowrap">
                 RESUMO GERAL
@@ -877,7 +886,7 @@ function ReportModal({ onClose, capacidadeTotal, totalOcupado, pctOcupada, repor
               </div>
             </div>
 
-            {/* TABELA DIREITA (AMPLIADA - 3 COLUNAS DE 4) */}
+            {/* TABELA DIREITA */}
             <div className="md:col-span-3 border border-slate-200 rounded-lg overflow-hidden bg-white text-xs shadow-sm">
               <div className="bg-orange-500 text-white py-2 px-3 font-black font-sans uppercase text-[11px] tracking-wider flex justify-between items-center">
                 <span>DESTINO</span>
@@ -927,7 +936,7 @@ function ReportModal({ onClose, capacidadeTotal, totalOcupado, pctOcupada, repor
 // OUTROS COMPONENTES AUXILIARES
 // =====================================================================
 
-function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon, darkMode }) {
+function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon, darkMode, hasTypeFilter = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef(null);
@@ -942,9 +951,9 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const filteredOptions = options.filter(opt =>
-    String(opt).toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredOptions = options.filter(opt => {
+    return String(opt).toLowerCase().includes(searchTerm.toLowerCase());
+  });
 
   const toggleOption = (opt) => {
     if (selected.includes(opt)) {
@@ -962,11 +971,34 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
     }
   };
 
+  const selectGroup = (type) => {
+    let groupItems = [];
+    if (type === 'SOC') {
+      groupItems = options.filter(o => String(o).toUpperCase().includes('SOC'));
+    } else if (type === 'XPT') {
+      groupItems = options.filter(o => String(o).toUpperCase().includes('XPT'));
+    } else if (type === 'HUB') {
+      groupItems = options.filter(o => {
+        const u = String(o).toUpperCase();
+        return u.includes('HUB') || u.includes('LM HUB');
+      });
+    }
+
+    const allGroupSelected = groupItems.every(item => selected.includes(item));
+
+    if (allGroupSelected) {
+      setSelected(selected.filter(item => !groupItems.includes(item)));
+    } else {
+      const uniqueNew = Array.from(new Set([...selected, ...groupItems]));
+      setSelected(uniqueNew);
+    }
+  };
+
   return (
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs h-[38px] shadow-sm font-semibold cursor-pointer ${
+        className={`flex items-center gap-2 px-3 rounded-lg border text-xs h-[38px] shadow-sm font-semibold cursor-pointer ${
           darkMode
             ? 'bg-slate-800 border-slate-700 hover:border-slate-600 text-slate-200'
             : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
@@ -982,7 +1014,7 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
       </button>
 
       {isOpen && (
-        <div className={`absolute right-0 mt-1 w-64 rounded-xl border shadow-xl z-50 p-2 text-xs max-h-80 flex flex-col space-y-1.5 ${
+        <div className={`absolute right-0 mt-1 w-68 rounded-xl border shadow-xl z-50 p-2 text-xs max-h-88 flex flex-col space-y-1.5 ${
           darkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-slate-200 text-slate-700'
         }`}>
           {options.length > 5 && (
@@ -1019,6 +1051,39 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
             </div>
             <span>Selecionar Todos</span>
           </div>
+
+          {/* SUB-FILTRO DE TIPO (ORDEM: HUB, SOC, XPT) */}
+          {hasTypeFilter && (
+            <div className={`flex items-center justify-between gap-1 p-1 rounded-lg border shrink-0 ${
+              darkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-slate-50 border-slate-200'
+            }`}>
+              {['HUB', 'SOC', 'XPT'].map((type) => {
+                const groupItems = options.filter(o => {
+                  const u = String(o).toUpperCase();
+                  if (type === 'HUB') return u.includes('HUB') || u.includes('LM HUB');
+                  return u.includes(type);
+                });
+                const isAllSelected = groupItems.length > 0 && groupItems.every(i => selected.includes(i));
+
+                return (
+                  <button
+                    key={type}
+                    onClick={() => selectGroup(type)}
+                    className={`flex-1 py-1 px-1.5 rounded text-[11px] font-black tracking-wide transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                      isAllSelected
+                        ? 'bg-orange-500 text-white shadow-sm'
+                        : darkMode
+                        ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                    }`}
+                  >
+                    <span>{type}</span>
+                    {isAllSelected && <Check size={11} />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           <div className="overflow-y-auto space-y-0.5 max-h-48 pr-1">
             {filteredOptions.length > 0 ? (

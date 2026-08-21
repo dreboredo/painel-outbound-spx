@@ -1,8 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import * as htmlToImage from 'html-to-image';
-import mascoteImg from './assets/shopito.png'; // ajuste o caminho se necessário
+import mascoteImg from './assets/shopito.png';
 import { supabase } from './lib/supabase';
-import { RefreshCw, Filter, Truck, Clock, Package, Layers, RotateCcw, ChevronDown, Check, Home, Search, Box, FileText, X, Camera, Sun, Moon } from 'lucide-react';
+import { 
+  RefreshCw, Filter, Truck, Clock, Package, Layers, 
+  RotateCcw, ChevronDown, Check, Home, Search, Box, 
+  FileText, X, Camera, Sun, Moon, Send
+} from 'lucide-react';
 
 // =====================================================================
 // DESIGN TOKENS - PALETA SHOPEE & REGRAS
@@ -101,7 +105,90 @@ function getDynamicGradient(pct, mirrored = false) {
 }
 
 // =====================================================================
-// PARSERS E TRATAMENTO DE STRING/DATA
+// HELPER PARA PARSEAR TIMESTAMPTZ COMO HORÁRIO LOCAL "LITERAL"
+// O Supabase grava os timestamps com sufixo +00 (UTC), mas os valores já
+// representam o horário local (Brasil). Se usarmos `new Date(tsString)`
+// direto, o navegador converte de UTC para o fuso local e desloca o
+// horário (ex: -3h), quebrando exibição, classificação de turno e de
+// data operacional. Por isso extraímos os componentes literais da string
+// e montamos um Date "local" com eles, ignorando o offset informado.
+// =====================================================================
+
+function parseTimestamptzAsLocal(tsString) {
+  if (!tsString) return null;
+
+  const match = String(tsString).match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+  if (!match) {
+    const fallback = new Date(tsString);
+    return isNaN(fallback.getTime()) ? null : fallback;
+  }
+
+  const [, ano, mes, dia, hora, minuto, segundo] = match;
+  const dateObj = new Date(
+    parseInt(ano, 10),
+    parseInt(mes, 10) - 1,
+    parseInt(dia, 10),
+    parseInt(hora, 10),
+    parseInt(minuto, 10),
+    parseInt(segundo, 10)
+  );
+
+  return isNaN(dateObj.getTime()) ? null : dateObj;
+}
+
+// =====================================================================
+// HELPER PARA IDENTIFICAÇÃO DE TURNO BASEADO NO CPT REALIZADO
+// =====================================================================
+
+function getTurnoFromCptRealizado(tsString) {
+  const dateObj = parseTimestamptzAsLocal(tsString);
+  if (!dateObj) return null;
+
+  const hours = dateObj.getHours();
+
+  if (hours >= 6 && hours < 14) {
+    return 'T1';
+  } else if (hours >= 14 && hours < 22) {
+    return 'T2';
+  } else {
+    return 'T3';
+  }
+}
+
+// =====================================================================
+// HELPER PARA CALCULAR A DATA OPERAÇÃO (CORTES ÀS 06H00)
+// Operação Comercial: 06:00:00 do dia X até 05:59:59 do dia X+1
+// =====================================================================
+
+function formatLocalDateStr(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const d = String(dateObj.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function getDataOperacao(tsString) {
+  const dateObj = parseTimestamptzAsLocal(tsString);
+  if (!dateObj) return null;
+
+  const copy = new Date(dateObj);
+  if (copy.getHours() < 6) {
+    copy.setDate(copy.getDate() - 1);
+  }
+  return formatLocalDateStr(copy);
+}
+
+function getFilterDateStr(offsetDays = 0) {
+  const now = new Date();
+  if (now.getHours() < 6) {
+    now.setDate(now.getDate() - 1);
+  }
+  now.setDate(now.getDate() - offsetDays);
+  return formatLocalDateStr(now);
+}
+
+// =====================================================================
+// PARSERS E TRATAMENTO DE STRING/DATA/TIMESTAMPTZ
 // =====================================================================
 
 function parseNumeroRua(val) {
@@ -140,6 +227,16 @@ function extractLastTime(cptTimestampStr) {
   return '-';
 }
 
+function formatTimestamptzToTime(tsString, includeSeconds = false) {
+  const dateObj = parseTimestamptzAsLocal(tsString);
+  if (!dateObj) return '-';
+  const h = String(dateObj.getHours()).padStart(2, '0');
+  const m = String(dateObj.getMinutes()).padStart(2, '0');
+  if (!includeSeconds) return `${h}:${m}`;
+  const s = String(dateObj.getSeconds()).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
 function limparNomeDestino(str) {
   if (!str) return '';
 
@@ -149,9 +246,7 @@ function limparNomeDestino(str) {
     clean = clean.replace(/\[?\d*\]?SoC[_\s]ES[_\s]Viana/gi, '').trim();
     clean = clean.replace(/\[.*?\]/g, '').trim();
     clean = clean.replace(/[_]+/g, ' ').trim();
-
     clean = clean.replace(/(Gravataí)\s*\d+/gi, '$1').trim();
-
     clean = clean.replace(/\s+\d+\s*$/g, '').trim();
 
     return clean;
@@ -206,8 +301,8 @@ export default function App() {
   const [ordenacao, setOrdenacao] = useState('numero');
 
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showExpedidosModal, setShowExpedidosModal] = useState(false);
 
-  // ESTADO DO MODO ESCURO / MODO CLARO
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
     return saved ? saved === 'dark' : false;
@@ -469,7 +564,6 @@ export default function App() {
       <header className={`p-4 rounded-xl border shadow-sm space-y-3 ${
         darkMode ? 'bg-slate-800/90 border-slate-700' : 'bg-slate-50 border-slate-200'
       }`}>
-        {/* LINHA 1: TÍTULO E FILTROS */}
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
           
           <div className="flex items-center gap-3">
@@ -544,15 +638,12 @@ export default function App() {
           </div>
         </div>
 
-        {/* LINHA 2: SUBTÍTULO, MODO CLARO/ESCURO, REPORT, RELÓGIO E SYNC (CENTRALIZADOS NA VERTICAL) */}
         <div className={`flex flex-col sm:flex-row items-center justify-between gap-3 text-xs pt-3 border-t ${
           darkMode ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'
         }`}>
           <p className="font-medium">Monitoramento Operacional em Tempo Real</p>
           
           <div className="flex flex-wrap items-center gap-2.5">
-
-            {/* BOTÃO MODO ESCURO / CLARO */}
             <button
               onClick={toggleDarkMode}
               title={darkMode ? "Alternar para Modo Claro" : "Alternar para Modo Escuro"}
@@ -575,7 +666,6 @@ export default function App() {
               )}
             </button>
 
-            {/* BOTÃO REPORT */}
             <button
               onClick={() => setShowReportModal(true)}
               className="flex items-center gap-1.5 px-3 h-[32px] bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs rounded-md shadow-sm transition-all cursor-pointer"
@@ -584,7 +674,6 @@ export default function App() {
               <span>Report Hora a Hora</span>
             </button>
 
-            {/* RELÓGIO */}
             <div className={`flex items-center gap-1.5 px-2.5 h-[32px] rounded-md border font-mono font-bold text-xs shadow-sm ${
               darkMode ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-200 text-slate-700'
             }`}>
@@ -592,7 +681,6 @@ export default function App() {
               <span>{horaAtual.toLocaleTimeString('pt-BR')}</span>
             </div>
 
-            {/* ÚLTIMA SYNC */}
             {ultimaSinc && (
               <div className={`flex items-center font-mono text-[11px] px-2.5 h-[32px] rounded-md font-semibold ${
                 darkMode ? 'bg-slate-700/80 text-slate-300' : 'bg-slate-200/60 text-slate-600'
@@ -635,10 +723,21 @@ export default function App() {
         <section className={`p-4 rounded-xl border flex flex-col gap-3 shadow-sm ${
           darkMode ? 'bg-slate-800/90 border-slate-700' : 'bg-slate-50 border-slate-200'
         }`}>
-          <div className="flex items-center gap-2 font-bold uppercase text-xs" style={{ color: SHOPEE_PALETTE.cyan }}>
-            <Truck size={16} />
-            <span>Docas / Veículos Docados</span>
+          <div className="flex items-center justify-between font-bold uppercase text-xs">
+            <div className="flex items-center gap-2" style={{ color: SHOPEE_PALETTE.cyan }}>
+              <Truck size={16} />
+              <span>Docas / Veículos Docados</span>
+            </div>
+
+            <button
+              onClick={() => setShowExpedidosModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-[11px] rounded-lg shadow transition cursor-pointer"
+            >
+              <Send size={13} />
+              <span>Veículos Expedidos</span>
+            </button>
           </div>
+
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             {docasList.length > 0 ? (
               docasList.map((doca) => <DocaCard key={doca.id} doca={doca} horaAtual={horaAtual} darkMode={darkMode} />)
@@ -747,7 +846,6 @@ export default function App() {
         )}
       </div>
 
-      {/* MODAL REPORT HORA A HORA */}
       {showReportModal && (
         <ReportModal
           onClose={() => setShowReportModal(false)}
@@ -755,8 +853,381 @@ export default function App() {
           totalOcupado={totalOcupado}
           pctOcupada={pctOcupadaNum}
           reportDestinos={reportDestinos}
+          darkMode={darkMode}
         />
       )}
+
+      {showExpedidosModal && (
+        <ExpedidosModal
+          onClose={() => setShowExpedidosModal(false)}
+          darkMode={darkMode}
+        />
+      )}
+    </div>
+  );
+}
+
+// =====================================================================
+// MODAL DE VEÍCULOS EXPEDIDOS
+// =====================================================================
+
+function ExpedidosModal({ onClose, darkMode }) {
+  const [tripsCompleted, setTripsCompleted] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedTurnos, setSelectedTurnos] = useState([]);
+  const [selectedDataFilter, setSelectedDataFilter] = useState('HOJE'); 
+
+  const [selectedTrip, setSelectedTrip] = useState(null);
+
+  useEffect(() => {
+    fetchTripsCompleted();
+  }, []);
+
+  async function fetchTripsCompleted() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('trips_completed')
+      .select('*')
+      .not('cpt_realizado', 'is', null)
+      .order('cpt_realizado', { ascending: false });
+
+    if (!error && data) {
+      setTripsCompleted(data);
+      if (data.length > 0) {
+        setSelectedTrip(data[0]);
+      }
+    } else {
+      setTripsCompleted([]);
+    }
+    setLoading(false);
+  }
+
+  const toggleTurno = (turno) => {
+    if (turno === 'TODOS') {
+      setSelectedTurnos([]);
+      return;
+    }
+
+    if (selectedTurnos.includes(turno)) {
+      setSelectedTurnos(selectedTurnos.filter(t => t !== turno));
+    } else {
+      setSelectedTurnos([...selectedTurnos, turno]);
+    }
+  };
+
+  const filteredTrips = tripsCompleted
+    .filter(trip => {
+      if (selectedTurnos.length > 0) {
+        const turnoCalculado = getTurnoFromCptRealizado(trip.cpt_realizado) || String(trip.turno || '').toUpperCase();
+        if (!selectedTurnos.includes(turnoCalculado)) return false;
+      }
+
+      const refDateStr = trip.cpt_realizado;
+      if (!refDateStr) return false;
+
+      const tripOpDate = getDataOperacao(refDateStr);
+      if (!tripOpDate) return false;
+
+      if (selectedDataFilter === 'HOJE') {
+        if (tripOpDate !== getFilterDateStr(0)) return false;
+      } else if (selectedDataFilter === 'D-1') {
+        if (tripOpDate !== getFilterDateStr(1)) return false;
+      } else if (selectedDataFilter === 'D-2') {
+        if (tripOpDate !== getFilterDateStr(2)) return false;
+      } else if (selectedDataFilter === 'TODOS') {
+        // "Todos" deve considerar apenas a janela dos últimos 3 dias operacionais
+        // (Hoje, D-1 e D-2), já que a base possui registros mais antigos que não
+        // devem entrar nesse filtro.
+        const janelaValida = [getFilterDateStr(0), getFilterDateStr(1), getFilterDateStr(2)];
+        if (!janelaValida.includes(tripOpDate)) return false;
+      }
+
+      return true;
+    })
+    .sort((a, b) => {
+      // Mantém o agrupamento por data operacional (mais recente primeiro) e,
+      // dentro de cada data, ordena do CPT realizado mais recente para o
+      // primeiro CPT realizado do dia.
+      const dateA = getDataOperacao(a.cpt_realizado);
+      const dateB = getDataOperacao(b.cpt_realizado);
+
+      if (dateA !== dateB) {
+        return dateB.localeCompare(dateA);
+      }
+
+      const tsA = parseTimestamptzAsLocal(a.cpt_realizado);
+      const tsB = parseTimestamptzAsLocal(b.cpt_realizado);
+      return (tsB?.getTime() || 0) - (tsA?.getTime() || 0);
+    });
+
+  const totalPacotesExpedidos = filteredTrips.reduce((acc, t) => acc + (Number(t.pacotes) || 0), 0);
+  const totalCarrosExpedidos = filteredTrips.length;
+  const sprValue = totalCarrosExpedidos > 0 
+    ? (totalPacotesExpedidos / totalCarrosExpedidos).toFixed(0) 
+    : 0;
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div className={`w-full max-w-4xl rounded-2xl shadow-2xl border overflow-hidden flex flex-col my-8 transition-colors ${
+        darkMode ? 'bg-slate-800 text-slate-100 border-slate-700' : 'bg-white text-slate-800 border-slate-200'
+      }`}>
+        
+        {/* CABEÇALHO DA MODAL */}
+        <div className={`p-4 border-b flex items-center justify-between shrink-0 ${
+          darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'
+        }`}>
+          <div className="flex items-center gap-2">
+            <Send className="text-emerald-500" size={20} />
+            <h3 className="text-lg font-black uppercase font-mono tracking-wider">
+              Veículos Expedidos
+            </h3>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className={`flex items-center gap-3 px-4 py-2 rounded-xl border shadow-md font-mono ${
+              darkMode ? 'bg-slate-900/90 border-slate-700' : 'bg-white border-slate-200'
+            }`}>
+              <div className="flex flex-col text-right">
+                <span className="text-xs font-black text-slate-400 uppercase tracking-wider">SPR (Pacotes/Carro)</span>
+                <span className="text-base font-black text-orange-500">
+                  {Number(sprValue).toLocaleString('pt-BR')} <span className="text-xs text-slate-400 font-semibold">({totalPacotesExpedidos.toLocaleString('pt-BR')} pcts / {totalCarrosExpedidos} carros)</span>
+                </span>
+              </div>
+            </div>
+
+            <button
+              onClick={onClose}
+              className={`p-1.5 rounded-lg transition cursor-pointer ${
+                darkMode ? 'bg-slate-700 hover:bg-slate-600 text-slate-300' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+              }`}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* CORPO DA MODAL */}
+        <div className="px-4 md:px-6 pb-4 md:pb-6 space-y-4">
+          <div className="border-b py-3 border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-center sm:justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">
+                Data:
+              </span>
+              <div className="flex items-center gap-1">
+                {[
+                  { id: 'HOJE', label: 'HOJE' },
+                  { id: 'D-1', label: 'D-1' },
+                  { id: 'D-2', label: 'D-2' },
+                  { id: 'TODOS', label: 'TODOS' }
+                ].map(df => (
+                  <button
+                    key={df.id}
+                    onClick={() => setSelectedDataFilter(df.id)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      selectedDataFilter === df.id
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : darkMode
+                        ? 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {df.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">
+                Turno:
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => toggleTurno('TODOS')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    selectedTurnos.length === 0
+                      ? 'bg-orange-500 text-white shadow-sm'
+                      : darkMode
+                      ? 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  TODOS
+                </button>
+
+                {['T1', 'T2', 'T3'].map(turno => {
+                  const isSelected = selectedTurnos.includes(turno);
+                  return (
+                    <button
+                      key={turno}
+                      onClick={() => toggleTurno(turno)}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                        isSelected
+                          ? 'bg-orange-500 text-white shadow-sm'
+                          : darkMode
+                          ? 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      <span>{turno}</span>
+                      {isSelected && <Check size={12} />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* TABELA DE EXPEDIÇÕES */}
+          <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+            <div className="w-full font-mono text-sm max-h-60 overflow-y-auto">
+              <div className={`grid grid-cols-12 uppercase font-bold border-b py-2.5 px-3 items-center sticky top-0 z-10 ${
+                darkMode ? 'bg-slate-900/95 border-slate-700 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-500'
+              }`}>
+                <div className="col-span-3 text-center">LT</div>
+                <div className="col-span-4 text-center">Destino</div>
+                <div className="col-span-3 text-center">CPT Realizado</div>
+                <div className="col-span-2 text-center">CPT</div>
+              </div>
+
+              <div className="divide-y divide-slate-100 dark:divide-slate-700/50">
+                {loading ? (
+                  <div className="py-8 text-center text-slate-400">
+                    Carregando dados de expedição...
+                  </div>
+                ) : filteredTrips.length === 0 ? (
+                  <div className="py-8 text-center text-slate-400">
+                    Nenhum veículo expedido encontrado para os filtros selecionados.
+                  </div>
+                ) : (
+                  filteredTrips.map((trip) => {
+                    const isSelected = selectedTrip?.id_lt === trip.id_lt;
+
+                    const cptRealizadoDate = parseTimestamptzAsLocal(trip.cpt_realizado);
+                    const cptPlannedDate = parseTimestamptzAsLocal(trip.cpt);
+                    const isCptLate = cptRealizadoDate && cptPlannedDate && cptRealizadoDate >= cptPlannedDate;
+
+                    return (
+                      <div
+                        key={trip.id_lt}
+                        onClick={() => setSelectedTrip(isSelected ? null : trip)}
+                        className={`grid grid-cols-12 py-2.5 px-3 cursor-pointer transition-colors items-center ${
+                          isSelected
+                            ? darkMode
+                              ? 'bg-slate-700/80 font-bold'
+                              : 'bg-orange-50 font-bold'
+                            : darkMode
+                            ? 'hover:bg-slate-700/40'
+                            : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="col-span-3 text-orange-500 font-bold truncate px-2 text-center">{trip.id_lt}</div>
+                        <div className="col-span-4 text-center truncate px-2">{limparNomeDestino(trip.destino) || 'N/A'}</div>
+                        <div className={`col-span-3 text-center font-bold ${isCptLate ? 'text-red-500' : 'text-emerald-500'}`}>
+                          {formatTimestamptzToTime(trip.cpt_realizado, true)}
+                        </div>
+                        <div className="col-span-2 text-center font-bold text-slate-400">
+                          {formatTimestamptzToTime(trip.cpt)}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* CARD DE DETALHES DA VIAGEM SELECIONADA */}
+          {selectedTrip && (
+            <div className={`mt-4 p-4 rounded-xl border space-y-3 animate-in fade-in duration-200 ${
+              darkMode ? 'bg-slate-900/80 border-slate-700' : 'bg-slate-50 border-slate-200'
+            }`}>
+              <div className="flex items-center justify-between border-b pb-2 border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-black text-sm text-orange-500">
+                    {selectedTrip.id_lt}
+                  </span>
+                  {selectedTrip.tipo_veiculo && (
+                    <span className="text-xs font-bold uppercase px-2.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
+                      {selectedTrip.tipo_veiculo}
+                    </span>
+                  )}
+                </div>
+                <span className="font-mono font-bold text-sm text-slate-500 dark:text-slate-400">
+                  {selectedTrip.pacotes || 0} PACOTES
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center font-mono">
+                <div className={`p-2 rounded border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <div className="text-xs text-slate-400 uppercase font-sans font-semibold">Destino</div>
+                  <div className="font-bold text-sm truncate" title={limparNomeDestino(selectedTrip.destino)}>
+                    {limparNomeDestino(selectedTrip.destino) || '-'}
+                  </div>
+                </div>
+                <div className={`p-2 rounded border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <div className="text-xs text-slate-400 uppercase font-sans font-semibold">Placa</div>
+                  <div className="font-bold text-sm">{selectedTrip.placa || '-'}</div>
+                </div>
+                <div className={`p-2 rounded border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <div className="text-xs text-slate-400 uppercase font-sans font-semibold">Sacas</div>
+                  <div className="font-bold text-sm">{selectedTrip.sacas || 0}</div>
+                </div>
+                <div className={`p-2 rounded border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <div className="text-xs text-slate-400 uppercase font-sans font-semibold">Scuttles</div>
+                  <div className="font-bold text-sm">{selectedTrip.scuttles || 0}</div>
+                </div>
+                <div className={`p-2 rounded border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <div className="text-xs text-slate-400 uppercase font-sans font-semibold">Pallets</div>
+                  <div className="font-bold text-sm">{selectedTrip.pallets || 0}</div>
+                </div>
+                <div className={`p-2 rounded border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <div className="text-xs text-slate-400 uppercase font-sans font-semibold">VOL</div>
+                  <div className="font-bold text-sm">{selectedTrip.vol || 0}</div>
+                </div>
+              </div>
+
+              {(() => {
+                const etaRealizedDate = parseTimestamptzAsLocal(selectedTrip.eta_realizado);
+                const etaPlannedDate = parseTimestamptzAsLocal(selectedTrip.eta);
+                const isEtaLate = etaRealizedDate && etaPlannedDate && etaRealizedDate >= etaPlannedDate;
+
+                const cptRealizedDate = parseTimestamptzAsLocal(selectedTrip.cpt_realizado);
+                const cptPlannedDate = parseTimestamptzAsLocal(selectedTrip.cpt);
+                const isCptLate = cptRealizedDate && cptPlannedDate && cptRealizedDate >= cptPlannedDate;
+
+                return (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono">
+                    <div className={`p-2 rounded border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                      <div className="text-xs text-slate-400 uppercase font-sans font-semibold">ETA</div>
+                      <div className="font-bold text-sm">{formatTimestamptzToTime(selectedTrip.eta)}</div>
+                    </div>
+
+                    <div className={`p-2 rounded border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                      <div className="text-xs text-slate-400 uppercase font-sans font-semibold">ETA Realizado</div>
+                      <div className={`font-bold text-sm ${isEtaLate ? 'text-red-500' : 'text-blue-500'}`}>
+                        {formatTimestamptzToTime(selectedTrip.eta_realizado)}
+                      </div>
+                    </div>
+
+                    <div className={`p-2 rounded border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                      <div className="text-xs text-slate-400 uppercase font-sans font-semibold">CPT</div>
+                      <div className="font-bold text-sm">{formatTimestamptzToTime(selectedTrip.cpt)}</div>
+                    </div>
+
+                    <div className={`p-2 rounded border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                      <div className="text-xs text-slate-400 uppercase font-sans font-semibold">CPT Realizado</div>
+                      <div className={`font-bold text-sm ${isCptLate ? 'text-red-500' : 'text-emerald-500'}`}>
+                        {formatTimestamptzToTime(selectedTrip.cpt_realizado)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -765,7 +1236,7 @@ export default function App() {
 // MODAL DE REPORT
 // =====================================================================
 
-function ReportModal({ onClose, capacidadeTotal, totalOcupado, pctOcupada, reportDestinos }) {
+function ReportModal({ onClose, capacidadeTotal, totalOcupado, pctOcupada, reportDestinos, darkMode }) {
   const pctLivre = (100 - pctOcupada).toFixed(2);
   const [copied, setCopied] = useState(false);
   const [capturing, setCapturing] = useState(false);
@@ -779,7 +1250,7 @@ function ReportModal({ onClose, capacidadeTotal, totalOcupado, pctOcupada, repor
     try {
       const blob = await htmlToImage.toBlob(printAreaRef.current, {
         quality: 0.95,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: darkMode ? '#0F172A' : '#FFFFFF',
         pixelRatio: 2,
       });
 
@@ -821,19 +1292,23 @@ function ReportModal({ onClose, capacidadeTotal, totalOcupado, pctOcupada, repor
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto">
-      <div className="bg-white text-slate-800 w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-8">
-        
-        {/* CABEÇALHO DO MODAL */}
-        <div className="bg-slate-50 border-b border-slate-200 p-3 flex items-center justify-between shrink-0">
+      <div className={`w-full max-w-4xl rounded-2xl shadow-2xl border overflow-hidden flex flex-col my-8 transition-colors ${
+        darkMode ? 'bg-slate-900 text-slate-100 border-slate-700' : 'bg-white text-slate-800 border-slate-200'
+      }`}>
+        <div className={`p-3 border-b flex items-center justify-between shrink-0 ${
+          darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'
+        }`}>
           <button
             onClick={onClose}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs transition cursor-pointer"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition cursor-pointer ${
+              darkMode ? 'bg-slate-700 hover:bg-slate-600 text-slate-200' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+            }`}
           >
             <X size={16} />
             <span>Voltar ao Dashboard</span>
           </button>
 
-          <h3 className="text-base md:text-lg font-black uppercase font-mono text-orange-600 tracking-wider">
+          <h3 className="text-base md:text-lg font-black uppercase font-mono text-orange-500 tracking-wider">
             OVERVIEW RUAS — STAGE OUT (REPORT)
           </h3>
 
@@ -857,37 +1332,41 @@ function ReportModal({ onClose, capacidadeTotal, totalOcupado, pctOcupada, repor
           </button>
         </div>
 
-        {/* ÁREA CAPTURADA PELO PRINT */}
-        <div ref={printAreaRef} className="p-4 bg-white">
+        <div ref={printAreaRef} className={`p-4 transition-colors ${darkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-slate-800'}`}>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
-            
-            {/* CARDS ESQUERDA */}
-            <div className="md:col-span-1 border border-slate-200 rounded-lg overflow-hidden bg-slate-50 shadow-sm text-xs font-mono font-bold">
+            <div className={`md:col-span-1 border rounded-lg overflow-hidden shadow-sm text-xs font-mono font-bold ${
+              darkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-50 border-slate-200'
+            }`}>
               <div className="bg-orange-500 text-white py-2 px-2 text-center font-black font-sans uppercase text-[11px] tracking-wider whitespace-nowrap">
                 RESUMO GERAL
               </div>
-              <div className="divide-y divide-slate-200">
+              <div className={`divide-y ${darkMode ? 'divide-slate-700' : 'divide-slate-200'}`}>
                 <div className="py-2 px-2 flex justify-between items-center text-[11px]">
-                  <span className="text-slate-500">CAPACIDADE</span>
-                  <span className="text-slate-900 font-black">{capacidadeTotal}</span>
+                  <span className={darkMode ? 'text-slate-400' : 'text-slate-500'}>CAPACIDADE</span>
+                  <span className={`font-black ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>{capacidadeTotal}</span>
                 </div>
                 <div className="py-2 px-2 flex justify-between items-center text-[11px]">
-                  <span className="text-slate-500">OCUPADO</span>
-                  <span className="text-slate-900 font-black">{totalOcupado}</span>
+                  <span className={darkMode ? 'text-slate-400' : 'text-slate-500'}>OCUPADO</span>
+                  <span className={`font-black ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>{totalOcupado}</span>
                 </div>
-                <div className="py-2 px-2 flex justify-between items-center bg-amber-50 text-[11px]">
-                  <span className="text-amber-800">% OCUPADA</span>
-                  <span className="text-amber-700 font-black">{pctOcupada.toFixed(2)}%</span>
+                <div className={`py-2 px-2 flex justify-between items-center text-[11px] ${
+                  darkMode ? 'bg-amber-950/40' : 'bg-amber-50'
+                }`}>
+                  <span className={darkMode ? 'text-amber-400' : 'text-amber-800'}>% OCUPADA</span>
+                  <span className={`font-black ${darkMode ? 'text-amber-300' : 'text-amber-700'}`}>{pctOcupada.toFixed(2)}%</span>
                 </div>
-                <div className="py-2 px-2 flex justify-between items-center bg-emerald-50 text-[11px]">
-                  <span className="text-emerald-800">% LIVRE</span>
-                  <span className="text-emerald-700 font-black">{pctLivre}%</span>
+                <div className={`py-2 px-2 flex justify-between items-center text-[11px] ${
+                  darkMode ? 'bg-emerald-950/40' : 'bg-emerald-50'
+                }`}>
+                  <span className={darkMode ? 'text-emerald-400' : 'text-emerald-800'}>% LIVRE</span>
+                  <span className={`font-black ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>{pctLivre}%</span>
                 </div>
               </div>
             </div>
 
-            {/* TABELA DIREITA */}
-            <div className="md:col-span-3 border border-slate-200 rounded-lg overflow-hidden bg-white text-xs shadow-sm">
+            <div className={`md:col-span-3 border rounded-lg overflow-hidden text-xs shadow-sm ${
+              darkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-white border-slate-200'
+            }`}>
               <div className="bg-orange-500 text-white py-2 px-3 font-black font-sans uppercase text-[11px] tracking-wider flex justify-between items-center">
                 <span>DESTINO</span>
                 <div className="flex items-center gap-3 shrink-0 font-mono text-[11px]">
@@ -903,17 +1382,26 @@ function ReportModal({ onClose, capacidadeTotal, totalOcupado, pctOcupada, repor
                     Nenhum destino ocupado no momento.
                   </div>
                 ) : (
-                  <div className="divide-y divide-slate-100">
+                  <div className={`divide-y ${darkMode ? 'divide-slate-700/60' : 'divide-slate-100'}`}>
                     {reportDestinos.map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center py-1.5 px-3 hover:bg-slate-50 transition">
-                        <span className="font-bold text-slate-800 pr-2 leading-snug">
+                      <div 
+                        key={idx} 
+                        className={`flex justify-between items-center py-1.5 px-3 transition ${
+                          darkMode ? 'hover:bg-slate-700/40' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className={`font-bold pr-2 leading-snug ${darkMode ? 'text-slate-200' : 'text-slate-800'}`}>
                           {item.destino}
                         </span>
                         
                         <div className="flex items-center gap-3 font-mono text-center shrink-0">
-                          <span className="w-14 text-slate-600 font-semibold">{item.gaiolas}</span>
-                          <span className="w-14 text-slate-600 font-semibold">{item.scuttles}</span>
-                          <span className="w-24 font-black text-slate-900 bg-orange-50 border border-orange-200 rounded py-0.5 px-1 text-center">
+                          <span className={`w-14 font-semibold ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>{item.gaiolas}</span>
+                          <span className={`w-14 font-semibold ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>{item.scuttles}</span>
+                          <span className={`w-24 font-black rounded py-0.5 px-1 text-center border ${
+                            darkMode 
+                              ? 'bg-amber-950/60 text-amber-300 border-amber-800' 
+                              : 'bg-orange-50 text-slate-900 border-orange-200'
+                          }`}>
                             {item.total}
                           </span>
                         </div>
@@ -923,17 +1411,15 @@ function ReportModal({ onClose, capacidadeTotal, totalOcupado, pctOcupada, repor
                 )}
               </div>
             </div>
-
           </div>
         </div>
-
       </div>
     </div>
   );
 }
 
 // =====================================================================
-// OUTROS COMPONENTES AUXILIARES
+// COMPONENTES AUXILIARES
 // =====================================================================
 
 function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon, darkMode, hasTypeFilter = false }) {
@@ -1052,7 +1538,6 @@ function MultiSelectDropdown({ label, options, selected, setSelected, icon: Icon
             <span>Selecionar Todos</span>
           </div>
 
-          {/* SUB-FILTRO DE TIPO (ORDEM: HUB, SOC, XPT) */}
           {hasTypeFilter && (
             <div className={`flex items-center justify-between gap-1 p-1 rounded-lg border shrink-0 ${
               darkMode ? 'bg-slate-900/60 border-slate-700' : 'bg-slate-50 border-slate-200'
